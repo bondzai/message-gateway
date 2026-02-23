@@ -14,12 +14,18 @@ let activeConversation = null;
 fetch('/api/chats')
   .then(r => r.json())
   .then(chats => {
+    console.log(`Loaded ${chats.length} saved chats`);
     for (const msg of chats) {
       addToConversation(msg);
     }
     renderConversationList();
+    // Auto-select first conversation
+    const firstConv = Object.keys(conversations)[0];
+    if (firstConv && !activeConversation) {
+      selectConversation(firstConv);
+    }
   })
-  .catch(() => {});
+  .catch((err) => console.error('Failed to load chats:', err));
 
 socket.on('connect', () => {
   status.textContent = 'Connected';
