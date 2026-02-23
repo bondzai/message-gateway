@@ -6,26 +6,35 @@ const chatHeader = document.getElementById('chat-header');
 const sendForm = document.getElementById('send-form');
 const msgInput = document.getElementById('msg-input');
 const sendBtn = sendForm.querySelector('button');
+const debug = document.getElementById('debug');
 
 const conversations = {};
 let activeConversation = null;
 
+function log(msg) {
+  console.log(msg);
+  if (debug) debug.textContent = msg;
+}
+
 // Load saved chats on page load
+log('Loading chats...');
 fetch('/api/chats')
   .then(r => r.json())
   .then(chats => {
-    console.log(`Loaded ${chats.length} saved chats`);
+    log(`Loaded ${chats.length} saved chats`);
     for (const msg of chats) {
       addToConversation(msg);
     }
     renderConversationList();
     // Auto-select first conversation
-    const firstConv = Object.keys(conversations)[0];
-    if (firstConv && !activeConversation) {
-      selectConversation(firstConv);
+    const sorted = Object.entries(conversations).sort(
+      (a, b) => new Date(b[1].lastActivity) - new Date(a[1].lastActivity)
+    );
+    if (sorted.length > 0 && !activeConversation) {
+      selectConversation(sorted[0][0]);
     }
   })
-  .catch((err) => console.error('Failed to load chats:', err));
+  .catch((err) => log('Failed to load chats: ' + err.message));
 
 socket.on('connect', () => {
   status.textContent = 'Connected';
@@ -48,6 +57,7 @@ socket.on('message', (data) => {
 
 function addToConversation(data) {
   const convId = data.conversationId;
+  if (!convId) return;
 
   if (!conversations[convId]) {
     conversations[convId] = {
@@ -57,11 +67,21 @@ function addToConversation(data) {
     };
   }
 
-  if (data.direction === 'incoming' && !conversations[convId].user) {
+  if (data.direction === 'incoming' && data.user) {
     conversations[convId].user = data.user;
   }
 
-  conversations[convId].messages.push(data);
+  // Skip duplicates (same content + timestamp)
+  const msgs = conversations[convId].messages;
+  const isDupe = msgs.some(m =>
+    m.timestamp === data.timestamp &&
+    m.message.content === data.message.content &&
+    m.direction === data.direction
+  );
+  if (!isDupe) {
+    msgs.push(data);
+  }
+
   conversations[convId].lastActivity = data.timestamp;
 }
 
@@ -86,10 +106,14 @@ function renderConversationList() {
 function selectConversation(convId) {
   activeConversation = convId;
   const conv = conversations[convId];
+  if (!conv) return;
   const name = conv.user?.nickname || conv.user?.username || convId;
   chatHeader.textContent = `Chat with ${name}`;
   msgInput.disabled = false;
   sendBtn.disabled = false;
+
+  // Sort messages by timestamp before rendering
+  conv.messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
   chat.innerHTML = '';
   for (const msg of conv.messages) {
@@ -97,6 +121,7 @@ function selectConversation(convId) {
   }
 
   renderConversationList();
+  log(`${conv.messages.length} messages in ${name}`);
 }
 
 function appendMessage(data) {
@@ -105,7 +130,7 @@ function appendMessage(data) {
 
   const time = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const sender = data.direction === 'incoming'
-    ? escapeHtml(data.user.nickname || data.user.username)
+    ? escapeHtml(data.user?.nickname || data.user?.username || '?')
     : 'You';
 
   el.innerHTML = `
@@ -132,11 +157,13 @@ sendForm.addEventListener('submit', (e) => {
 });
 
 function escapeHtml(str) {
+  if (!str) return '';
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
 }
 
 function truncate(str, max) {
+  if (!str) return '';
   return str.length > max ? str.slice(0, max) + '...' : str;
 }

@@ -3,7 +3,7 @@ import { BaseProvider } from './BaseProvider.js';
 import { Logger } from '../core/Logger.js';
 
 const API_BASE = 'https://api.respond.io/v2';
-const POLL_INTERVAL = 5000;
+const POLL_INTERVAL = 1000;
 
 export class RespondIOProvider extends BaseProvider {
   constructor(eventBus, config) {

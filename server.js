@@ -96,11 +96,21 @@ app.get('/api/chats', (req, res) => {
 });
 
 // Wire outbound DMs to provider
-// Note: we don't emit 'message' here — polling will pick up the outgoing
-// message from the API and emit it, avoiding duplicates.
 bus.on('dm:outgoing', async ({ conversationId, text }) => {
   const result = await provider.sendMessage(conversationId, text);
-  if (!result.success) {
+  if (result.success) {
+    // Emit immediately so it shows on dashboard right away.
+    // sendMessage() already added the messageId to seenMessageIds,
+    // so polling won't duplicate it.
+    bus.emit('message', {
+      type: 'dm',
+      direction: 'outgoing',
+      conversationId,
+      timestamp: new Date().toISOString(),
+      user: { id: 'self', username: 'You', nickname: 'You', avatar: '' },
+      message: { type: 'text', content: text },
+    });
+  } else {
     Logger.error(`Failed to send to ${conversationId}: ${result.error}`);
   }
 });
