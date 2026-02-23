@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: message-gateway
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: PROVIDER
+        sync: false
+      - key: TIKTOK_CLIENT_KEY
+        sync: false
+      - key: TIKTOK_CLIENT_SECRET
+        sync: false
+      - key: THIRDPARTY_API_KEY
+        sync: false
+      - key: THIRDPARTY_API_URL
+        sync: false
+      - key: WEBHOOK_VERIFY_TOKEN
+        sync: false

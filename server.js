@@ -1,7 +1,7 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import axios from 'axios';
 import config from './src/config.js';
 import { EventBus } from './src/core/EventBus.js';
@@ -13,6 +13,8 @@ import { ThirdPartyProvider } from './src/providers/ThirdPartyProvider.js';
 import { RespondIOProvider } from './src/providers/RespondIOProvider.js';
 
 const CHAT_LOG = new URL('./data/chats.jsonl', import.meta.url).pathname;
+const DATA_DIR = new URL('./data', import.meta.url).pathname;
+if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
 const app = express();
 const server = createServer(app);
@@ -55,19 +57,12 @@ app.get('/api/chats', (req, res) => {
 });
 
 // Wire outbound DMs to provider
+// Note: we don't emit 'message' here — polling will pick up the outgoing
+// message from the API and emit it, avoiding duplicates.
 bus.on('dm:outgoing', async ({ conversationId, text }) => {
   const result = await provider.sendMessage(conversationId, text);
-
-  if (result.success) {
-    // Emit outbound message back to dashboard
-    bus.emit('message', {
-      type: 'dm',
-      direction: 'outgoing',
-      conversationId,
-      timestamp: new Date().toISOString(),
-      user: { id: 'self', username: 'You', nickname: 'You', avatar: '' },
-      message: { type: 'text', content: text },
-    });
+  if (!result.success) {
+    Logger.error(`Failed to send to ${conversationId}: ${result.error}`);
   }
 });
 
@@ -133,7 +128,7 @@ function upsertEnv(content, key, value) {
   return regex.test(content) ? content.replace(regex, line) : content.trimEnd() + '\n' + line + '\n';
 }
 
-server.listen(config.port, () => {
+server.listen(config.port, '0.0.0.0', () => {
   Logger.info(`Server running on http://localhost:${config.port}`);
   Logger.info('Webhook URL: /webhook/tiktok');
   Logger.info('OAuth callback: /auth/callback');

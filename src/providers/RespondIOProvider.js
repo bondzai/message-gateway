@@ -67,7 +67,10 @@ export class RespondIOProvider extends BaseProvider {
         { headers: this.headers },
       );
 
-      Logger.info(`Reply sent to contact ${contactId} (msgId: ${response.data?.messageId})`);
+      const msgId = response.data?.messageId;
+      Logger.info(`Reply sent to contact ${contactId} (msgId: ${msgId})`);
+      // Track the messageId so polling doesn't emit it as a duplicate
+      if (msgId) this.seenMessageIds.add(String(msgId));
       return { success: true, data: response.data };
     } catch (err) {
       Logger.error('Send error:', err.response?.data || err.message);
@@ -133,9 +136,8 @@ export class RespondIOProvider extends BaseProvider {
         { headers: this.headers },
       );
 
-      const messages = res.data?.items || [];
+      const messages = (res.data?.items || []).reverse(); // oldest-first
 
-      // Process messages newest-first, emit any we haven't seen
       for (const msg of messages) {
         const msgId = String(msg.messageId);
 
