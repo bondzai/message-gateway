@@ -1,4 +1,4 @@
-const socket = io();
+const socket = io({ transports: ['polling', 'websocket'], upgrade: true });
 const chat = document.getElementById('chat');
 const status = document.getElementById('status');
 const convList = document.getElementById('conv-list');

@@ -29,6 +29,19 @@ app.use(express.static('public'));
 // Health check for Render
 app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
+// Debug endpoint
+app.get('/api/status', (req, res) => {
+  const p = provider;
+  res.json({
+    provider: config.provider,
+    hasApiKey: !!config.thirdParty.apiKey,
+    contacts: p.knownContacts ? p.knownContacts.size : 0,
+    seenMessages: p.seenMessageIds ? p.seenMessageIds.size : 0,
+    polling: !!p.pollTimer,
+    chatLogExists: existsSync(CHAT_LOG),
+  });
+});
+
 const bus = new EventBus();
 
 // Provider factory
