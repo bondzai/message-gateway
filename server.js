@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import axios from 'axios';
 import config from './src/config.js';
 import { EventBus } from './src/core/EventBus.js';
@@ -12,9 +13,10 @@ import { TikTokOfficialProvider } from './src/providers/TikTokOfficialProvider.j
 import { ThirdPartyProvider } from './src/providers/ThirdPartyProvider.js';
 import { RespondIOProvider } from './src/providers/RespondIOProvider.js';
 
-const CHAT_LOG = new URL('./data/chats.jsonl', import.meta.url).pathname;
-const DATA_DIR = new URL('./data', import.meta.url).pathname;
+const DATA_DIR = join(process.cwd(), 'data');
+const CHAT_LOG = join(DATA_DIR, 'chats.jsonl');
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+Logger.info(`Chat log path: ${CHAT_LOG}`);
 
 const app = express();
 const server = createServer(app);
@@ -32,13 +34,21 @@ app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 // Debug endpoint
 app.get('/api/status', (req, res) => {
   const p = provider;
+  let chatCount = 0;
+  try {
+    if (existsSync(CHAT_LOG)) {
+      chatCount = readFileSync(CHAT_LOG, 'utf-8').trim().split('\n').filter(Boolean).length;
+    }
+  } catch {}
   res.json({
     provider: config.provider,
     hasApiKey: !!config.thirdParty.apiKey,
     contacts: p.knownContacts ? p.knownContacts.size : 0,
     seenMessages: p.seenMessageIds ? p.seenMessageIds.size : 0,
     polling: !!p.pollTimer,
+    chatLogPath: CHAT_LOG,
     chatLogExists: existsSync(CHAT_LOG),
+    chatCount,
   });
 });
 
@@ -63,6 +73,7 @@ new SocketIOTransport(io, bus).register();
 bus.on('message', (msg) => {
   try {
     appendFileSync(CHAT_LOG, JSON.stringify(msg) + '\n');
+    Logger.info(`Saved: [${msg.direction}] ${msg.message?.content?.slice(0, 30)}`);
   } catch (err) {
     Logger.error('Failed to save chat:', err.message);
   }
@@ -70,9 +81,18 @@ bus.on('message', (msg) => {
 
 // Serve chat log as JSON API
 app.get('/api/chats', (req, res) => {
-  if (!existsSync(CHAT_LOG)) return res.json([]);
-  const lines = readFileSync(CHAT_LOG, 'utf-8').trim().split('\n').filter(Boolean);
-  res.json(lines.map((l) => JSON.parse(l)));
+  try {
+    if (!existsSync(CHAT_LOG)) return res.json([]);
+    const raw = readFileSync(CHAT_LOG, 'utf-8').trim();
+    if (!raw) return res.json([]);
+    const lines = raw.split('\n').filter(Boolean);
+    const chats = lines.map((l) => JSON.parse(l));
+    Logger.info(`Serving ${chats.length} saved chats`);
+    res.json(chats);
+  } catch (err) {
+    Logger.error('Failed to read chats:', err.message);
+    res.json([]);
+  }
 });
 
 // Wire outbound DMs to provider
