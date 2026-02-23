@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TikTok DM Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>TikTok DM Dashboard</h1>
+    <span id="status" class="status disconnected">Disconnected</span>
+  </header>
+  <div class="container">
+    <aside id="conversations">
+      <h2>Conversations</h2>
+      <ul id="conv-list"></ul>
+    </aside>
+    <main>
+      <div id="chat-header">Select a conversation</div>
+      <div id="chat"></div>
+      <form id="send-form">
+        <input type="text" id="msg-input" placeholder="Type a reply..." autocomplete="off" disabled>
+        <button type="submit" disabled>Send</button>
+      </form>
+    </main>
+  </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
