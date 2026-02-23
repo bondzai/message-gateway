@@ -18,10 +18,16 @@ if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 
 const app = express();
 const server = createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: { origin: '*' },
+  transports: ['websocket', 'polling'],
+});
 
 app.use(express.json());
 app.use(express.static('public'));
+
+// Health check for Render
+app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
 const bus = new EventBus();
 
