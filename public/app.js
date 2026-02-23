@@ -10,6 +10,17 @@ const sendBtn = sendForm.querySelector('button');
 const conversations = {};
 let activeConversation = null;
 
+// Load saved chats on page load
+fetch('/api/chats')
+  .then(r => r.json())
+  .then(chats => {
+    for (const msg of chats) {
+      addToConversation(msg);
+    }
+    renderConversationList();
+  })
+  .catch(() => {});
+
 socket.on('connect', () => {
   status.textContent = 'Connected';
   status.className = 'status connected';
@@ -21,6 +32,15 @@ socket.on('disconnect', () => {
 });
 
 socket.on('message', (data) => {
+  addToConversation(data);
+  renderConversationList();
+
+  if (activeConversation === data.conversationId) {
+    appendMessage(data);
+  }
+});
+
+function addToConversation(data) {
   const convId = data.conversationId;
 
   if (!conversations[convId]) {
@@ -37,13 +57,7 @@ socket.on('message', (data) => {
 
   conversations[convId].messages.push(data);
   conversations[convId].lastActivity = data.timestamp;
-
-  renderConversationList();
-
-  if (activeConversation === convId) {
-    appendMessage(data);
-  }
-});
+}
 
 function renderConversationList() {
   convList.innerHTML = '';

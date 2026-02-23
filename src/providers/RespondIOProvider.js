@@ -10,9 +10,11 @@ export class RespondIOProvider extends BaseProvider {
     super(eventBus, config);
     this.apiKey = config.thirdParty.apiKey;
     this.apiUrl = config.thirdParty.apiUrl || API_BASE;
-    this.seenMessages = new Set();
+    this.knownContacts = new Map();
+    this.seenMessageIds = new Set();
     this.pollTimer = null;
     this._lastErrorStatus = null;
+    this._firstPoll = true;
   }
 
   get headers() {
@@ -30,31 +32,24 @@ export class RespondIOProvider extends BaseProvider {
     const body = req.body;
     if (!body) return res.status(400).json({ error: 'Invalid payload' });
 
-    if (body.event === 'message.created' || body.data) {
-      const data = body.data || body;
-      const contact = data.contact || {};
-      const message = data.message || data.content || {};
+    const data = body.data || body;
+    const contact = data.contact || {};
+    const message = data.message || data.content || {};
 
-      const payload = {
-        conversationId: String(contact.id || contact._id || data.conversationId || 'unknown'),
-        user: {
-          id: String(contact.id || contact._id || 'unknown'),
-          username: contact.firstName || contact.phone || contact.email || 'unknown',
-          nickname: [contact.firstName, contact.lastName].filter(Boolean).join(' ')
-            || contact.name || 'unknown',
-          avatar: contact.profilePic || '',
-        },
-        message: {
-          type: message.type || 'text',
-          content: message.text || message.content || '',
-        },
-        timestamp: data.timestamp
-          ? new Date(data.timestamp).toISOString()
-          : new Date().toISOString(),
-      };
-
-      this.eventBus.emit('dm:incoming', payload);
-    }
+    this.eventBus.emit('dm:incoming', {
+      conversationId: String(contact.id || data.conversationId || 'unknown'),
+      user: {
+        id: String(contact.id || 'unknown'),
+        username: contact.firstName || 'unknown',
+        nickname: [contact.firstName, contact.lastName].filter(Boolean).join(' ') || 'unknown',
+        avatar: contact.profilePic || '',
+      },
+      message: {
+        type: message.type || 'text',
+        content: message.text || message.content || '',
+      },
+      timestamp: new Date().toISOString(),
+    });
 
     res.status(200).json({ success: true });
   }
@@ -66,7 +61,6 @@ export class RespondIOProvider extends BaseProvider {
     }
 
     try {
-      // Respond.io API v2: POST /contact/id:{contactId}/message
       const response = await axios.post(
         `${this.apiUrl}/contact/id:${contactId}/message`,
         { message: { type: 'text', text } },
@@ -82,7 +76,7 @@ export class RespondIOProvider extends BaseProvider {
   }
 
   startPolling() {
-    Logger.info(`Polling Respond.io every ${POLL_INTERVAL / 1000}s for new messages...`);
+    Logger.info(`Polling Respond.io every ${POLL_INTERVAL / 1000}s...`);
     this._poll();
     this.pollTimer = setInterval(() => this._poll(), POLL_INTERVAL);
   }
@@ -96,9 +90,9 @@ export class RespondIOProvider extends BaseProvider {
 
   async _poll() {
     try {
-      // List all contacts with open conversations
+      // Get all contacts
       const res = await axios.post(
-        `${this.apiUrl}/contact/list?limit=20`,
+        `${this.apiUrl}/contact/list?limit=50`,
         { search: '', timezone: 'Asia/Bangkok', filter: { '$and': [] } },
         { headers: this.headers },
       );
@@ -107,68 +101,80 @@ export class RespondIOProvider extends BaseProvider {
       this._lastErrorStatus = null;
 
       for (const contact of contacts) {
-        await this._checkContact(contact);
+        const id = String(contact.id);
+
+        if (!this.knownContacts.has(id)) {
+          this.knownContacts.set(id, contact);
+          Logger.info(`${this._firstPoll ? 'Loaded' : 'New'}: ${contact.firstName || id} (${id})`);
+        }
+
+        // Fetch latest messages for this contact
+        await this._fetchMessages(contact);
       }
+
+      this._firstPoll = false;
     } catch (err) {
       if (err.response?.status !== this._lastErrorStatus) {
-        Logger.warn(`Poll error (${err.response?.status || 'network'}): ${err.response?.data?.message || err.message}`);
+        Logger.warn(`Poll: ${err.response?.data?.message || err.message}`);
         this._lastErrorStatus = err.response?.status;
       }
       if (err.response?.status === 401) {
-        Logger.error('Unauthorized — stopping polling. Check your API token.');
+        Logger.error('Unauthorized — check API token');
         this.stopPolling();
       }
     }
   }
 
-  async _checkContact(contact) {
+  async _fetchMessages(contact) {
     try {
-      const contactId = contact.id;
-      if (!contactId) return;
-
-      // Get contact details (includes latest message info)
+      const id = contact.id;
       const res = await axios.get(
-        `${this.apiUrl}/contact/id:${contactId}`,
+        `${this.apiUrl}/contact/id:${id}/message/list?limit=10`,
         { headers: this.headers },
       );
 
-      const c = res.data;
+      const messages = res.data?.items || [];
 
-      // Use the contact's last message timestamp as a dedup key
-      // Since we can't list messages on Growth plan, we track contact updates
-      const key = `${contactId}:${c.created_at}:${c.status}`;
-      if (this.seenMessages.has(key)) return;
+      // Process messages newest-first, emit any we haven't seen
+      for (const msg of messages) {
+        const msgId = String(msg.messageId);
 
-      // Only emit for new contacts we haven't seen
-      if (this.seenMessages.size === 0) {
-        // First poll — just mark as seen, don't emit old contacts
-        this.seenMessages.add(key);
-        Logger.info(`Known contact: ${c.firstName || contactId} (id: ${contactId})`);
-        return;
+        if (this.seenMessageIds.has(msgId)) continue;
+        this.seenMessageIds.add(msgId);
+
+        // On first poll, mark all as seen but still emit them to populate dashboard
+        const direction = msg.traffic === 'outgoing' ? 'outgoing' : 'incoming';
+        const text = msg.message?.text || msg.message?.content || '';
+
+        if (!text) continue;
+
+        if (!this._firstPoll) {
+          // Only log new messages after first poll
+          if (direction === 'incoming') {
+            Logger.info(`DM from ${contact.firstName || id}: ${text}`);
+          }
+        }
+
+        this.eventBus.emit(direction === 'incoming' ? 'dm:incoming' : 'message', {
+          type: 'dm',
+          direction,
+          conversationId: String(id),
+          user: direction === 'incoming'
+            ? {
+                id: String(id),
+                username: contact.firstName || String(id),
+                nickname: [contact.firstName, contact.lastName].filter(Boolean).join(' ') || String(id),
+                avatar: contact.profilePic || '',
+              }
+            : { id: 'self', username: 'You', nickname: 'You', avatar: '' },
+          message: { type: msg.message?.type || 'text', content: text },
+          timestamp: msg.messageId
+            ? new Date(Math.floor(msg.messageId / 1000)).toISOString()
+            : new Date().toISOString(),
+        });
       }
-
-      this.seenMessages.add(key);
-
-      // This is a new contact/conversation we haven't seen before
-      const payload = {
-        conversationId: String(contactId),
-        user: {
-          id: String(contactId),
-          username: c.firstName || c.phone || c.email || String(contactId),
-          nickname: [c.firstName, c.lastName].filter(Boolean).join(' ') || String(contactId),
-          avatar: c.profilePic || '',
-        },
-        message: {
-          type: 'text',
-          content: '(New conversation started)',
-        },
-        timestamp: new Date(c.created_at * 1000).toISOString(),
-      };
-
-      Logger.info(`New contact detected: ${payload.user.nickname}`);
-      this.eventBus.emit('dm:incoming', payload);
     } catch (err) {
-      // Skip individual contact errors
+      // Silently skip — will retry next poll
     }
   }
 }
