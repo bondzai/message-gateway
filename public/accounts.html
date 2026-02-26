@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TikTok Accounts — Vulcan AI</title>
+  <link rel="stylesheet" href="style.css?v=4">
+  <style>
+    .page { max-width: 800px; margin: 0 auto; padding: 32px 20px; }
+    .page h2 { font-size: 22px; margin-bottom: 8px; }
+    .page p.sub { color: #888; font-size: 14px; margin-bottom: 24px; }
+
+    .accounts-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+
+    .account-card {
+      display: flex; align-items: center; gap: 16px;
+      padding: 16px 20px; background: #1a1a1a; border-radius: 12px;
+      border: 1px solid #2a2a2a;
+    }
+    .account-avatar {
+      width: 48px; height: 48px; border-radius: 50%; background: #2a2a2a;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; color: #888; overflow: hidden; flex-shrink: 0;
+    }
+    .account-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .account-info { flex: 1; }
+    .account-name { font-weight: 600; font-size: 15px; }
+    .account-id { font-size: 12px; color: #666; margin-top: 2px; }
+    .account-status { font-size: 12px; margin-top: 4px; }
+    .account-status.active { color: #4caf50; }
+    .account-status.expired { color: #f44336; }
+
+    .btn {
+      padding: 8px 16px; border: none; border-radius: 8px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .btn-connect {
+      background: #ff3b5c; color: #fff; padding: 12px 24px;
+      font-size: 15px; border-radius: 10px;
+    }
+    .btn-connect:hover { background: #e0354f; }
+    .btn-disconnect { background: #333; color: #f44336; }
+    .btn-disconnect:hover { background: #3a1a1a; }
+    .btn-chat { background: #1a3a6a; color: #69b4ff; margin-right: 8px; }
+    .btn-chat:hover { background: #1a4a8a; }
+
+    .empty {
+      text-align: center; padding: 48px 20px; color: #666;
+      border: 2px dashed #2a2a2a; border-radius: 12px;
+    }
+    .empty p { margin-bottom: 16px; }
+
+    .nav { display: flex; gap: 16px; align-items: center; }
+    .nav a { color: #69b4ff; text-decoration: none; font-size: 14px; }
+    .nav a:hover { text-decoration: underline; }
+
+    .toast {
+      position: fixed; top: 20px; right: 20px; padding: 12px 20px;
+      background: #1a3a1a; color: #4caf50; border-radius: 8px;
+      font-size: 14px; display: none; z-index: 100;
+    }
+    .toast.error { background: #3a1a1a; color: #f44336; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Vulcan AI</h1>
+    <div class="nav">
+      <a href="/">Dashboard</a>
+      <a href="/accounts.html">Accounts</a>
+    </div>
+  </header>
+  <div class="page">
+    <h2>Connected TikTok Accounts</h2>
+    <p class="sub">Connect your TikTok Business accounts to start receiving and replying to DMs with AI.</p>
+
+    <div id="accounts-list" class="accounts-list">
+      <div class="empty">
+        <p>Loading accounts...</p>
+      </div>
+    </div>
+
+    <button class="btn btn-connect" onclick="connectAccount()">+ Connect TikTok Account</button>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    // Load connected accounts
+    async function loadAccounts() {
+      try {
+        const res = await fetch('/api/accounts');
+        const accounts = await res.json();
+        renderAccounts(accounts);
+      } catch (err) {
+        document.getElementById('accounts-list').innerHTML =
+          '<div class="empty"><p>Failed to load accounts</p></div>';
+      }
+    }
+
+    function renderAccounts(accounts) {
+      const list = document.getElementById('accounts-list');
+
+      if (accounts.length === 0) {
+        list.innerHTML = `
+          <div class="empty">
+            <p>No TikTok accounts connected yet.</p>
+            <p>Click the button below to connect your first account.</p>
+          </div>`;
+        return;
+      }
+
+      list.innerHTML = accounts.map(acc => `
+        <div class="account-card" data-id="${acc.id}">
+          <div class="account-avatar">
+            ${acc.avatar_url
+              ? `<img src="${acc.avatar_url}" alt="">`
+              : '@'}
+          </div>
+          <div class="account-info">
+            <div class="account-name">@${acc.username || acc.display_name || acc.open_id}</div>
+            <div class="account-id">ID: ${acc.open_id}</div>
+            <div class="account-status ${acc.status}">
+              ${acc.status === 'active' ? '● Connected' : '○ ' + acc.status}
+              ${acc.token_expires_at ? ' — Token expires: ' + new Date(acc.token_expires_at).toLocaleString() : ''}
+            </div>
+          </div>
+          <button class="btn btn-chat" onclick="window.location='/'">Chats</button>
+          <button class="btn btn-disconnect" onclick="disconnectAccount('${acc.id}')">Disconnect</button>
+        </div>
+      `).join('');
+    }
+
+    // Redirect to TikTok OAuth
+    function connectAccount() {
+      window.location.href = '/auth/connect';
+    }
+
+    // Disconnect an account
+    async function disconnectAccount(id) {
+      if (!confirm('Disconnect this TikTok account? You can reconnect later.')) return;
+
+      try {
+        const res = await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Account disconnected');
+          loadAccounts();
+        } else {
+          showToast('Failed to disconnect: ' + (data.error || 'Unknown error'), true);
+        }
+      } catch (err) {
+        showToast('Failed to disconnect', true);
+      }
+    }
+
+    function showToast(msg, isError) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'toast' + (isError ? ' error' : '');
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 3000);
+    }
+
+    // Check for success/error params from OAuth callback
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('connected')) {
+      showToast('TikTok account connected successfully!');
+      window.history.replaceState({}, '', '/accounts.html');
+    }
+    if (params.get('error')) {
+      showToast('Connection failed: ' + params.get('error'), true);
+      window.history.replaceState({}, '', '/accounts.html');
+    }
+
+    loadAccounts();
+  </script>
+</body>
+</html>

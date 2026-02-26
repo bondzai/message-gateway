@@ -9,8 +9,11 @@
 <body>
   <header>
     <h1>TikTok DM Dashboard</h1>
-    <span id="debug" style="font-size:11px;color:#888;"></span>
-    <span id="status" class="status disconnected">Disconnected</span>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <span id="debug" style="font-size:11px;color:#888;"></span>
+      <a href="/accounts.html" style="color:#69b4ff;font-size:13px;text-decoration:none;">Accounts</a>
+      <span id="status" class="status disconnected">Disconnected</span>
+    </div>
   </header>
   <div class="container">
     <aside id="conversations">

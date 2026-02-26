@@ -15,8 +15,18 @@ import { RespondIOProvider } from './src/providers/RespondIOProvider.js';
 
 const DATA_DIR = join(process.cwd(), 'data');
 const CHAT_LOG = join(DATA_DIR, 'chats.jsonl');
+const ACCOUNTS_FILE = join(DATA_DIR, 'accounts.json');
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
 Logger.info(`Chat log path: ${CHAT_LOG}`);
+
+// Accounts store (JSON file for PoC — use DB in production)
+function loadAccounts() {
+  if (!existsSync(ACCOUNTS_FILE)) return [];
+  try { return JSON.parse(readFileSync(ACCOUNTS_FILE, 'utf-8')); } catch { return []; }
+}
+function saveAccounts(accounts) {
+  writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+}
 
 const app = express();
 const server = createServer(app);
@@ -115,18 +125,85 @@ bus.on('dm:outgoing', async ({ conversationId, text }) => {
   }
 });
 
-// Webhook routes
-app.get('/webhook/tiktok', (req, res) => provider.verifyWebhook(req, res));
-app.post('/webhook/tiktok', (req, res) => provider.handleWebhook(req, res));
+// ===== Account Management API =====
 
-// OAuth callback — exchanges code for access token automatically
+// List connected accounts
+app.get('/api/accounts', (req, res) => {
+  const accounts = loadAccounts().map(a => ({
+    id: a.id,
+    open_id: a.open_id,
+    username: a.username,
+    display_name: a.display_name,
+    avatar_url: a.avatar_url,
+    status: a.status,
+    token_expires_at: a.token_expires_at,
+    connected_at: a.connected_at,
+  }));
+  res.json(accounts);
+});
+
+// Disconnect an account
+app.delete('/api/accounts/:id', async (req, res) => {
+  const accounts = loadAccounts();
+  const idx = accounts.findIndex(a => a.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Account not found' });
+
+  const account = accounts[idx];
+
+  // Revoke token at TikTok
+  try {
+    await axios.post(
+      'https://open.tiktokapis.com/v2/oauth/revoke/',
+      new URLSearchParams({
+        client_key: config.tiktok.clientKey,
+        client_secret: config.tiktok.clientSecret,
+        token: account.access_token,
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
+    );
+    Logger.info(`Revoked token for @${account.username || account.open_id}`);
+  } catch (err) {
+    Logger.warn(`Token revoke failed (may already be invalid): ${err.message}`);
+  }
+
+  // Remove from accounts
+  accounts.splice(idx, 1);
+  saveAccounts(accounts);
+  Logger.info(`Disconnected account: @${account.username || account.open_id}`);
+  res.json({ success: true });
+});
+
+// ===== OAuth Connect Flow =====
+
+// Step 1: Redirect to TikTok authorization
+app.get('/auth/connect', (req, res) => {
+  if (!config.tiktok.clientKey) {
+    return res.status(400).send('TIKTOK_CLIENT_KEY not configured in .env');
+  }
+
+  const redirectUri = `${req.protocol}://${req.get('host')}/auth/callback`;
+  const oauthUrl = 'https://www.tiktok.com/v2/auth/authorize/'
+    + `?client_key=${config.tiktok.clientKey}`
+    + `&response_type=code`
+    + `&scope=user.info.basic,im.message.read,im.message.write`
+    + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+    + `&state=connect`;
+
+  Logger.info(`Redirecting to TikTok OAuth: ${oauthUrl}`);
+  res.redirect(oauthUrl);
+});
+
+// Step 2: TikTok redirects back with code
 app.get('/auth/callback', async (req, res) => {
   const { code, state } = req.query;
-  if (!code) return res.status(400).send('Missing code parameter');
+  if (!code) return res.redirect('/accounts.html?error=missing_code');
 
   Logger.info(`OAuth callback received — code: ${code.slice(0, 8)}...`);
 
+  const redirectUri = `${req.protocol}://${req.get('host')}/auth/callback`;
+
   try {
+    // Step 3: Exchange code for tokens
     const tokenRes = await axios.post(
       'https://open.tiktokapis.com/v2/oauth/token/',
       new URLSearchParams({
@@ -134,48 +211,75 @@ app.get('/auth/callback', async (req, res) => {
         client_secret: config.tiktok.clientSecret,
         code,
         grant_type: 'authorization_code',
-        redirect_uri: `${req.protocol}://${req.get('host')}/auth/callback`,
+        redirect_uri: redirectUri,
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
     );
 
     const tokens = tokenRes.data;
-    Logger.info('OAuth token exchange successful!');
-    Logger.info(`Access token: ${tokens.access_token}`);
-    Logger.info(`Refresh token: ${tokens.refresh_token}`);
-    Logger.info(`Expires in: ${tokens.expires_in}s`);
+    Logger.info(`Token exchange successful — open_id: ${tokens.open_id}`);
 
-    // Save tokens to .env file
-    const envPath = new URL('./.env', import.meta.url).pathname;
-    let envContent = existsSync(envPath) ? readFileSync(envPath, 'utf-8') : '';
-    envContent = upsertEnv(envContent, 'TIKTOK_ACCESS_TOKEN', tokens.access_token);
-    envContent = upsertEnv(envContent, 'TIKTOK_REFRESH_TOKEN', tokens.refresh_token);
-    writeFileSync(envPath, envContent);
-    Logger.info('Tokens saved to .env — restart server to use them');
+    // Step 4: Get user profile info
+    let profile = { open_id: tokens.open_id, display_name: '', avatar_url: '', username: '' };
+    try {
+      const userRes = await axios.get(
+        'https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url,username',
+        { headers: { 'Authorization': `Bearer ${tokens.access_token}` } },
+      );
+      const userData = userRes.data?.data?.user || {};
+      profile = {
+        open_id: userData.open_id || tokens.open_id,
+        display_name: userData.display_name || '',
+        avatar_url: userData.avatar_url || '',
+        username: userData.username || '',
+      };
+      Logger.info(`Got profile: @${profile.username} (${profile.display_name})`);
+    } catch (err) {
+      Logger.warn(`Could not fetch user profile: ${err.message}`);
+    }
 
-    res.send(`
-      <h2>TikTok OAuth Success</h2>
-      <p>Access token: <code>${tokens.access_token?.slice(0, 20)}...</code></p>
-      <p>Refresh token: <code>${tokens.refresh_token?.slice(0, 20)}...</code></p>
-      <p>Expires in: ${tokens.expires_in}s</p>
-      <p>Tokens saved to .env — <strong>restart the server</strong> to use them.</p>
-      <p><a href="/">Go to dashboard</a></p>
-    `);
+    // Step 5: Save account
+    const accounts = loadAccounts();
+
+    // Check if already connected (same open_id)
+    const existingIdx = accounts.findIndex(a => a.open_id === profile.open_id);
+
+    const account = {
+      id: profile.open_id,
+      open_id: profile.open_id,
+      username: profile.username,
+      display_name: profile.display_name,
+      avatar_url: profile.avatar_url,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      token_expires_at: new Date(Date.now() + (tokens.expires_in || 86400) * 1000).toISOString(),
+      status: 'active',
+      connected_at: new Date().toISOString(),
+    };
+
+    if (existingIdx >= 0) {
+      accounts[existingIdx] = account;
+      Logger.info(`Reconnected @${profile.username || profile.open_id}`);
+    } else {
+      accounts.push(account);
+      Logger.info(`Connected new account @${profile.username || profile.open_id}`);
+    }
+
+    saveAccounts(accounts);
+    res.redirect('/accounts.html?connected=1');
+
   } catch (err) {
-    Logger.error('OAuth token exchange failed:', err.response?.data || err.message);
-    res.status(500).send(`
-      <h2>OAuth Failed</h2>
-      <pre>${JSON.stringify(err.response?.data || err.message, null, 2)}</pre>
-    `);
+    const detail = err.response?.data || err.message;
+    Logger.error('OAuth failed:', detail);
+    res.redirect('/accounts.html?error=' + encodeURIComponent(
+      typeof detail === 'string' ? detail : JSON.stringify(detail)
+    ));
   }
 });
 
-// Helper: upsert a key=value in .env content string
-function upsertEnv(content, key, value) {
-  const regex = new RegExp(`^${key}=.*$`, 'm');
-  const line = `${key}=${value}`;
-  return regex.test(content) ? content.replace(regex, line) : content.trimEnd() + '\n' + line + '\n';
-}
+// Webhook routes
+app.get('/webhook/tiktok', (req, res) => provider.verifyWebhook(req, res));
+app.post('/webhook/tiktok', (req, res) => provider.handleWebhook(req, res));
 
 server.listen(config.port, '0.0.0.0', () => {
   Logger.info(`Server running on http://localhost:${config.port}`);
