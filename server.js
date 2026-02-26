@@ -6,12 +6,14 @@ import { join } from 'path';
 import { randomBytes, createHash } from 'crypto';
 import axios from 'axios';
 
-// PKCE helpers for TikTok OAuth
+// PKCE helpers for TikTok OAuth (required by TikTok for all app types)
 function generateCodeVerifier() {
+  // 43-128 chars, unreserved characters per RFC 7636
   return randomBytes(32).toString('base64url');
 }
 function generateCodeChallenge(verifier) {
-  return createHash('sha256').update(verifier).digest('hex');
+  // TikTok uses S256: BASE64URL(SHA256(code_verifier))
+  return createHash('sha256').update(verifier).digest('base64url');
 }
 // Temporary store for PKCE verifiers (keyed by state)
 const pendingOAuth = new Map();
@@ -204,13 +206,13 @@ app.get('/auth/connect', (req, res) => {
   const oauthUrl = 'https://www.tiktok.com/v2/auth/authorize/'
     + `?client_key=${config.tiktok.clientKey}`
     + `&response_type=code`
-    + `&scope=user.info.basic,im.message.read,im.message.write`
+    + `&scope=user.info.basic`
     + `&redirect_uri=${encodeURIComponent(redirectUri)}`
     + `&state=${state}`
     + `&code_challenge=${codeChallenge}`
     + `&code_challenge_method=S256`;
 
-  Logger.info(`Redirecting to TikTok OAuth (PKCE enabled)`);
+  Logger.info(`Redirecting to TikTok OAuth`);
   res.redirect(oauthUrl);
 });
 
@@ -325,7 +327,7 @@ server.listen(config.port, '0.0.0.0', () => {
   if (config.provider === 'official' && config.tiktok.clientKey) {
     Logger.info('');
     Logger.info('=== To start OAuth, open this URL in your browser: ===');
-    Logger.info(`https://www.tiktok.com/v2/auth/authorize/?client_key=${config.tiktok.clientKey}&response_type=code&scope=user.info.basic,im.message.read,im.message.write&redirect_uri=http://localhost:${config.port}/auth/callback&state=poc`);
+    Logger.info(`https://www.tiktok.com/v2/auth/authorize/?client_key=${config.tiktok.clientKey}&response_type=code&scope=user.info.basic&redirect_uri=http://localhost:${config.port}/auth/callback&state=poc`);
     Logger.info('');
   }
 });
