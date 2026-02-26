@@ -3,7 +3,18 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { randomBytes, createHash } from 'crypto';
 import axios from 'axios';
+
+// PKCE helpers for TikTok OAuth
+function generateCodeVerifier() {
+  return randomBytes(32).toString('base64url');
+}
+function generateCodeChallenge(verifier) {
+  return createHash('sha256').update(verifier).digest('base64url');
+}
+// Temporary store for PKCE verifiers (keyed by state)
+const pendingOAuth = new Map();
 import config from './src/config.js';
 import { EventBus } from './src/core/EventBus.js';
 import { Logger } from './src/core/Logger.js';
@@ -175,11 +186,19 @@ app.delete('/api/accounts/:id', async (req, res) => {
 
 // ===== OAuth Connect Flow =====
 
-// Step 1: Redirect to TikTok authorization
+// Step 1: Redirect to TikTok authorization (with PKCE)
 app.get('/auth/connect', (req, res) => {
   if (!config.tiktok.clientKey) {
     return res.status(400).send('TIKTOK_CLIENT_KEY not configured in .env');
   }
+
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(codeVerifier);
+  const state = randomBytes(16).toString('hex');
+
+  // Store verifier for callback (expires in 10 min)
+  pendingOAuth.set(state, { codeVerifier, createdAt: Date.now() });
+  setTimeout(() => pendingOAuth.delete(state), 10 * 60 * 1000);
 
   const redirectUri = `${req.protocol}://${req.get('host')}/auth/callback`;
   const oauthUrl = 'https://www.tiktok.com/v2/auth/authorize/'
@@ -187,9 +206,11 @@ app.get('/auth/connect', (req, res) => {
     + `&response_type=code`
     + `&scope=user.info.basic,im.message.read,im.message.write`
     + `&redirect_uri=${encodeURIComponent(redirectUri)}`
-    + `&state=connect`;
+    + `&state=${state}`
+    + `&code_challenge=${codeChallenge}`
+    + `&code_challenge_method=S256`;
 
-  Logger.info(`Redirecting to TikTok OAuth: ${oauthUrl}`);
+  Logger.info(`Redirecting to TikTok OAuth (PKCE enabled)`);
   res.redirect(oauthUrl);
 });
 
@@ -200,10 +221,18 @@ app.get('/auth/callback', async (req, res) => {
 
   Logger.info(`OAuth callback received — code: ${code.slice(0, 8)}...`);
 
+  // Retrieve PKCE code_verifier
+  const pending = pendingOAuth.get(state);
+  if (!pending) {
+    Logger.warn('No pending OAuth state found — may have expired');
+    return res.redirect('/accounts.html?error=expired_state');
+  }
+  pendingOAuth.delete(state);
+
   const redirectUri = `${req.protocol}://${req.get('host')}/auth/callback`;
 
   try {
-    // Step 3: Exchange code for tokens
+    // Step 3: Exchange code for tokens (with code_verifier)
     const tokenRes = await axios.post(
       'https://open.tiktokapis.com/v2/oauth/token/',
       new URLSearchParams({
@@ -212,6 +241,7 @@ app.get('/auth/callback', async (req, res) => {
         code,
         grant_type: 'authorization_code',
         redirect_uri: redirectUri,
+        code_verifier: pending.codeVerifier,
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
     );
