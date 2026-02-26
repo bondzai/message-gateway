@@ -11,7 +11,7 @@ function generateCodeVerifier() {
   return randomBytes(32).toString('base64url');
 }
 function generateCodeChallenge(verifier) {
-  return createHash('sha256').update(verifier).digest('base64url');
+  return createHash('sha256').update(verifier).digest('hex');
 }
 // Temporary store for PKCE verifiers (keyed by state)
 const pendingOAuth = new Map();
