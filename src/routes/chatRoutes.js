@@ -16,7 +16,14 @@ export function registerChatRoutes(app, bus, { chatLogPath }) {
       const raw = readFileSync(chatLogPath, 'utf-8').trim();
       if (!raw) return res.json([]);
       const lines = raw.split('\n').filter(Boolean);
-      res.json(lines.map((l) => JSON.parse(l)));
+      let chats = lines.map((l) => JSON.parse(l));
+
+      const { accountId } = req.query;
+      if (accountId) {
+        chats = chats.filter((c) => c.accountId === accountId);
+      }
+
+      res.json(chats);
     } catch (err) {
       Logger.error('Failed to read chats:', err.message);
       res.json([]);

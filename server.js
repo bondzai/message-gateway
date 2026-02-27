@@ -40,12 +40,13 @@ registerAccountRoutes(app, config);
 registerAuthRoutes(app, config);
 registerWebhookRoutes(app, provider);
 
-bus.on('dm:outgoing', async ({ conversationId, text }) => {
+bus.on('dm:outgoing', async ({ conversationId, text, accountId }) => {
   const result = await provider.sendMessage(conversationId, text);
   if (result.success) {
     bus.emit('message', {
       type: 'dm',
       direction: 'outgoing',
+      accountId: accountId || '',
       conversationId,
       timestamp: new Date().toISOString(),
       user: { id: 'self', username: 'You', nickname: 'You', avatar: '' },

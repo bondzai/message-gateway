@@ -36,21 +36,10 @@ function renderAccounts(accounts) {
           ${acc.token_expires_at ? ' — Token expires: ' + new Date(acc.token_expires_at).toLocaleString() : ''}
         </div>
       </div>
+      <a class="btn btn-chat" href="/?account=${acc.id}">Open Chats</a>
       <button class="btn btn-disconnect" onclick="disconnectAccount('${acc.id}')">Disconnect</button>
     </div>
   `).join('');
-
-  // Show "Open Dashboard" button when accounts are connected
-  let dashBtn = document.getElementById('dashboard-btn');
-  if (!dashBtn) {
-    dashBtn = document.createElement('a');
-    dashBtn.id = 'dashboard-btn';
-    dashBtn.href = '/';
-    dashBtn.className = 'btn btn-connect';
-    dashBtn.style.cssText = 'display:inline-block;text-decoration:none;text-align:center;margin-top:16px;background:#1a6aff;';
-    dashBtn.textContent = 'Open Chat Dashboard →';
-    document.querySelector('.page').appendChild(dashBtn);
-  }
 }
 
 function connectAccount() {

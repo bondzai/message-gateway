@@ -10,6 +10,9 @@
   <header>
     <h1>Vulcan AI</h1>
     <div style="display:flex;align-items:center;gap:16px;">
+      <select id="account-select" style="background:#1a1a1a;color:#fff;border:1px solid #333;border-radius:6px;padding:6px 10px;font-size:13px;cursor:pointer;">
+        <option value="">Loading accounts...</option>
+      </select>
       <span id="debug" style="font-size:11px;color:#888;"></span>
       <a href="/accounts.html" style="color:#69b4ff;font-size:13px;text-decoration:none;">Account Settings</a>
       <span id="status" class="status disconnected">Disconnected</span>
@@ -30,6 +33,6 @@
     </main>
   </div>
   <script src="/socket.io/socket.io.js"></script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

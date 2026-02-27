@@ -1,13 +1,3 @@
-// Check if user has connected a TikTok account — redirect to login if not
-fetch('/api/accounts')
-  .then(r => r.json())
-  .then(accounts => {
-    if (!accounts || accounts.length === 0) {
-      window.location.href = '/accounts.html';
-    }
-  })
-  .catch(() => {});
-
 const socket = io({ transports: ['polling', 'websocket'], upgrade: true });
 const chat = document.getElementById('chat');
 const status = document.getElementById('status');
@@ -17,33 +7,100 @@ const sendForm = document.getElementById('send-form');
 const msgInput = document.getElementById('msg-input');
 const sendBtn = sendForm.querySelector('button');
 const debug = document.getElementById('debug');
+const accountSelect = document.getElementById('account-select');
 
-const conversations = {};
+let conversations = {};
 let activeConversation = null;
+let selectedAccountId = localStorage.getItem('selectedAccountId') || '';
+let accounts = [];
 
 function log(msg) {
   if (debug) debug.textContent = msg;
 }
 
-// Load saved chats on page load
-log('Loading chats...');
-fetch('/api/chats')
-  .then(r => r.json())
-  .then(chats => {
-    log(`Loaded ${chats.length} saved chats`);
-    for (const msg of chats) {
-      addToConversation(msg);
+// --- Account Selector ---
+
+async function loadAccountSelector() {
+  try {
+    const res = await fetch('/api/accounts');
+    accounts = await res.json();
+
+    if (!accounts || accounts.length === 0) {
+      window.location.href = '/accounts.html';
+      return;
     }
-    renderConversationList();
-    // Auto-select first conversation
-    const sorted = Object.entries(conversations).sort(
-      (a, b) => new Date(b[1].lastActivity) - new Date(a[1].lastActivity)
-    );
-    if (sorted.length > 0 && !activeConversation) {
-      selectConversation(sorted[0][0]);
+
+    // Check URL param (from accounts page "Open Dashboard" link)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlAccount = urlParams.get('account');
+    if (urlAccount) {
+      selectedAccountId = urlAccount;
+      localStorage.setItem('selectedAccountId', selectedAccountId);
+      window.history.replaceState({}, '', '/');
     }
-  })
-  .catch((err) => log('Failed to load chats: ' + err.message));
+
+    // If saved account no longer exists, reset to first
+    if (!accounts.find(a => a.id === selectedAccountId)) {
+      selectedAccountId = accounts[0].id;
+      localStorage.setItem('selectedAccountId', selectedAccountId);
+    }
+
+    accountSelect.innerHTML = accounts.map(acc => {
+      const name = acc.username ? `@${acc.username}` : acc.display_name || acc.open_id;
+      const selected = acc.id === selectedAccountId ? ' selected' : '';
+      return `<option value="${acc.id}"${selected}>${escapeHtml(name)}</option>`;
+    }).join('');
+
+    accountSelect.addEventListener('change', () => {
+      selectedAccountId = accountSelect.value;
+      localStorage.setItem('selectedAccountId', selectedAccountId);
+      switchAccount();
+    });
+
+    loadChats();
+  } catch (err) {
+    log('Failed to load accounts');
+  }
+}
+
+function switchAccount() {
+  conversations = {};
+  activeConversation = null;
+  chat.innerHTML = '';
+  chatHeader.textContent = 'Select a conversation';
+  msgInput.disabled = true;
+  sendBtn.disabled = true;
+  convList.innerHTML = '';
+  loadChats();
+}
+
+// --- Chat Loading ---
+
+function loadChats() {
+  const url = selectedAccountId
+    ? `/api/chats?accountId=${encodeURIComponent(selectedAccountId)}`
+    : '/api/chats';
+
+  log('Loading chats...');
+  fetch(url)
+    .then(r => r.json())
+    .then(chats => {
+      log(`Loaded ${chats.length} messages`);
+      for (const msg of chats) {
+        addToConversation(msg);
+      }
+      renderConversationList();
+      const sorted = Object.entries(conversations).sort(
+        (a, b) => new Date(b[1].lastActivity) - new Date(a[1].lastActivity)
+      );
+      if (sorted.length > 0 && !activeConversation) {
+        selectConversation(sorted[0][0]);
+      }
+    })
+    .catch((err) => log('Failed to load chats: ' + err.message));
+}
+
+// --- Socket.IO ---
 
 socket.on('connect', () => {
   status.textContent = 'Connected';
@@ -56,6 +113,11 @@ socket.on('disconnect', () => {
 });
 
 socket.on('message', (data) => {
+  // Filter by selected account (show all if no accountId on message)
+  if (selectedAccountId && data.accountId && data.accountId !== selectedAccountId) {
+    return;
+  }
+
   addToConversation(data);
   renderConversationList();
 
@@ -63,6 +125,8 @@ socket.on('message', (data) => {
     appendMessage(data);
   }
 });
+
+// --- Conversations ---
 
 function addToConversation(data) {
   const convId = data.conversationId;
@@ -80,7 +144,6 @@ function addToConversation(data) {
     conversations[convId].user = data.user;
   }
 
-  // Skip duplicates (same content + timestamp)
   const msgs = conversations[convId].messages;
   const isDupe = msgs.some(m =>
     m.timestamp === data.timestamp &&
@@ -121,7 +184,6 @@ function selectConversation(convId) {
   msgInput.disabled = false;
   sendBtn.disabled = false;
 
-  // Sort messages by timestamp before rendering
   conv.messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
   chat.innerHTML = '';
@@ -152,6 +214,8 @@ function appendMessage(data) {
   chat.scrollTop = chat.scrollHeight;
 }
 
+// --- Send Message ---
+
 sendForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const text = msgInput.value.trim();
@@ -159,11 +223,14 @@ sendForm.addEventListener('submit', (e) => {
 
   socket.emit('send_message', {
     conversationId: activeConversation,
+    accountId: selectedAccountId,
     text,
   });
 
   msgInput.value = '';
 });
+
+// --- Helpers ---
 
 function escapeHtml(str) {
   if (!str) return '';
@@ -176,3 +243,6 @@ function truncate(str, max) {
   if (!str) return '';
   return str.length > max ? str.slice(0, max) + '...' : str;
 }
+
+// --- Init ---
+loadAccountSelector();
