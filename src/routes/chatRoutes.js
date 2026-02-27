@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, readFileSync } from 'fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { Logger } from '../core/Logger.js';
 
 export function registerChatRoutes(app, bus, { chatLogPath }) {
@@ -27,6 +27,17 @@ export function registerChatRoutes(app, bus, { chatLogPath }) {
     } catch (err) {
       Logger.error('Failed to read chats:', err.message);
       res.json([]);
+    }
+  });
+
+  app.delete('/api/chats', (req, res) => {
+    try {
+      writeFileSync(chatLogPath, '');
+      Logger.info('Chat history cleared');
+      res.json({ success: true });
+    } catch (err) {
+      Logger.error('Failed to clear chats:', err.message);
+      res.status(500).json({ error: 'Failed to clear chats' });
     }
   });
 }

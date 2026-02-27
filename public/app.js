@@ -272,5 +272,24 @@ function truncate(str, max) {
   return str.length > max ? str.slice(0, max) + '...' : str;
 }
 
+// --- Clear History ---
+
+async function clearHistory() {
+  if (!confirm('Clear all chat history? Messages will reload from provider on next poll.')) return;
+  try {
+    await fetch('/api/chats', { method: 'DELETE' });
+    conversations = {};
+    activeConversation = null;
+    chat.innerHTML = '';
+    chatHeader.textContent = 'Select a conversation';
+    msgInput.disabled = true;
+    sendBtn.disabled = true;
+    convList.innerHTML = '';
+    log('History cleared');
+  } catch {
+    log('Failed to clear history');
+  }
+}
+
 // --- Start ---
 init();
