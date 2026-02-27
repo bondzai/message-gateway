@@ -85,7 +85,8 @@ Returns `{ messageId, contactId }` — we track `messageId` to prevent polling d
 ## TikTok Official API (Phase 2)
 
 > **Status:** Ready in codebase, needs TikTok developer approval
-> **Auth:** OAuth 2.0 with PKCE
+> **Auth:** OAuth 2.0 (Web — no PKCE)
+> **Full setup guide:** [tiktok-oauth-setup.md](./tiktok-oauth-setup.md)
 
 ### Requirements
 
@@ -112,9 +113,9 @@ https://www.tiktok.com/v2/auth/authorize/
   &scope=user.info.basic
   &redirect_uri=<CALLBACK>
   &state=<RANDOM>
-  &code_challenge=<BASE64URL_SHA256>
-  &code_challenge_method=S256
 ```
+
+> **Note:** No PKCE (code_challenge) for Web apps. PKCE is Desktop-only.
 
 **Step 2:** Exchange code for tokens:
 ```http
@@ -123,7 +124,6 @@ Content-Type: application/x-www-form-urlencoded
 
 client_key=<KEY>&client_secret=<SECRET>&code=<CODE>
 &grant_type=authorization_code&redirect_uri=<URI>
-&code_verifier=<VERIFIER>
 ```
 
 | Token | Expiry |
@@ -261,5 +261,5 @@ Open http://localhost:3000 — message appears.
 | No messages arriving | Check webhook URL registered + ngrok running |
 | "No API URL" on reply | Set `THIRDPARTY_API_URL` in `.env` |
 | 48h window expired | Customer must send a new message |
-| TikTok OAuth fails | Verify redirect URI registered in Developer Portal |
+| TikTok OAuth fails | See [tiktok-oauth-setup.md](./tiktok-oauth-setup.md) for full troubleshooting |
 | Messages duplicated | Check `seenMessageIds` in `/api/status` |
