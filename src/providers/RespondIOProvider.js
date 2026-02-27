@@ -12,8 +12,6 @@ export class RespondIOProvider extends BaseProvider {
     this.apiUrl = config.thirdParty.apiUrl || API_BASE;
     this.knownContacts = new Map();
     this.seenMessageIds = new Set();
-    this.channelMap = new Map(); // channelId → channel info (name, source)
-    this.contactChannelCache = new Map(); // contactId → channelId
     this.pollTimer = null;
     this._lastErrorStatus = null;
     this._firstPoll = true;
@@ -70,7 +68,6 @@ export class RespondIOProvider extends BaseProvider {
       );
 
       const msgId = response.data?.messageId;
-      // Track the messageId so polling doesn't emit it as a duplicate
       if (msgId) this.seenMessageIds.add(String(msgId));
       return { success: true, data: response.data };
     } catch (err) {
@@ -94,7 +91,6 @@ export class RespondIOProvider extends BaseProvider {
 
   async _poll() {
     try {
-      // Get all contacts
       const res = await axios.post(
         `${this.apiUrl}/contact/list?limit=50`,
         { search: '', timezone: 'Asia/Bangkok', filter: { '$and': [] } },
@@ -111,7 +107,6 @@ export class RespondIOProvider extends BaseProvider {
           this.knownContacts.set(id, contact);
         }
 
-        // Fetch latest messages for this contact
         await this._fetchMessages(contact);
       }
 
@@ -128,33 +123,6 @@ export class RespondIOProvider extends BaseProvider {
     }
   }
 
-  async _resolveChannelId(contactId) {
-    if (this.contactChannelCache.has(String(contactId))) {
-      return this.contactChannelCache.get(String(contactId));
-    }
-    try {
-      const res = await axios.get(
-        `${this.apiUrl}/contact/id:${contactId}/channels`,
-        { headers: this.headers },
-      );
-      const channels = res.data?.items || [];
-      if (channels.length > 0) {
-        const ch = channels[0];
-        this.contactChannelCache.set(String(contactId), String(ch.id));
-        if (!this.channelMap.has(String(ch.id))) {
-          this.channelMap.set(String(ch.id), {
-            name: ch.name,
-            source: ch.source,
-          });
-        }
-        return String(ch.id);
-      }
-    } catch {
-      // skip — will retry next poll
-    }
-    return '';
-  }
-
   async _fetchMessages(contact) {
     try {
       const id = contact.id;
@@ -163,20 +131,7 @@ export class RespondIOProvider extends BaseProvider {
         { headers: this.headers },
       );
 
-      const messages = (res.data?.items || []).reverse(); // oldest-first
-
-      // Resolve channel for this contact (cached after first lookup)
-      let channelId = '';
-      for (const msg of messages) {
-        if (msg.channelId) {
-          channelId = String(msg.channelId);
-          this.contactChannelCache.set(String(id), channelId);
-          break;
-        }
-      }
-      if (!channelId) {
-        channelId = await this._resolveChannelId(id);
-      }
+      const messages = (res.data?.items || []).reverse();
 
       for (const msg of messages) {
         const msgId = String(msg.messageId);
@@ -192,7 +147,6 @@ export class RespondIOProvider extends BaseProvider {
         this.eventBus.emit(direction === 'incoming' ? 'dm:incoming' : 'message', {
           type: 'dm',
           direction,
-          channelId: channelId || String(msg.channelId || ''),
           conversationId: String(id),
           user: direction === 'incoming'
             ? {

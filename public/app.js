@@ -8,22 +8,32 @@ const msgInput = document.getElementById('msg-input');
 const sendBtn = sendForm.querySelector('button');
 const debug = document.getElementById('debug');
 const accountSelect = document.getElementById('account-select');
+const modeBadge = document.getElementById('mode-badge');
 
 let conversations = {};
 let activeConversation = null;
-let selectedChannelId = localStorage.getItem('selectedChannelId') || '';
-let channels = [];
+let providerMode = 'official';
+let selectedAccountId = '';
 let accounts = [];
 
 function log(msg) {
   if (debug) debug.textContent = msg;
 }
 
-// --- Channel Selector ---
+// --- Init ---
 
-async function loadChannelSelector() {
+async function init() {
   try {
-    // Check accounts first — redirect if none connected
+    // 1. Detect provider mode
+    const modeRes = await fetch('/api/mode');
+    const { mode } = await modeRes.json();
+    providerMode = mode;
+
+    if (modeBadge) {
+      modeBadge.textContent = mode === 'respondio' ? 'Respond.io' : 'Official API';
+    }
+
+    // 2. Check accounts
     const accRes = await fetch('/api/accounts');
     accounts = await accRes.json();
     if (!accounts || accounts.length === 0) {
@@ -31,69 +41,71 @@ async function loadChannelSelector() {
       return;
     }
 
-    // Check URL param (from accounts page "Open Chats" link)
-    const urlParams = new URLSearchParams(window.location.search);
-    const urlAccount = urlParams.get('account');
-    if (urlAccount) {
-      window.history.replaceState({}, '', '/');
+    // 3. Setup UI based on mode
+    if (mode === 'respondio') {
+      initRespondioMode();
+    } else {
+      initOfficialMode();
     }
-
-    // Fetch discovered channels from Respond.io
-    const chRes = await fetch('/api/channels');
-    channels = await chRes.json();
-
-    if (channels.length === 0) {
-      // No channels discovered yet — show all chats
-      accountSelect.innerHTML = '<option value="">All Channels</option>';
-      accountSelect.disabled = true;
-      loadChats();
-      return;
-    }
-
-    // If saved channel no longer exists, reset
-    if (selectedChannelId && !channels.find(c => c.id === selectedChannelId)) {
-      selectedChannelId = '';
-      localStorage.setItem('selectedChannelId', '');
-    }
-
-    const allOption = channels.length > 1
-      ? `<option value=""${selectedChannelId === '' ? ' selected' : ''}>All Channels</option>`
-      : '';
-    accountSelect.innerHTML = allOption + channels.map(ch => {
-      const selected = ch.id === selectedChannelId ? ' selected' : '';
-      return `<option value="${ch.id}"${selected}>${escapeHtml(ch.name)}</option>`;
-    }).join('');
-    accountSelect.disabled = false;
-
-    accountSelect.addEventListener('change', () => {
-      selectedChannelId = accountSelect.value;
-      localStorage.setItem('selectedChannelId', selectedChannelId);
-      switchChannel();
-    });
 
     loadChats();
   } catch (err) {
-    log('Failed to load channels');
+    log('Failed to initialize');
   }
 }
 
-function switchChannel() {
-  conversations = {};
-  activeConversation = null;
-  chat.innerHTML = '';
-  chatHeader.textContent = 'Select a conversation';
-  msgInput.disabled = true;
-  sendBtn.disabled = true;
-  convList.innerHTML = '';
-  loadChats();
+function initRespondioMode() {
+  // No filtering — show all conversations
+  accountSelect.style.display = 'none';
+}
+
+function initOfficialMode() {
+  // Account selector for future Business API filtering
+  selectedAccountId = localStorage.getItem('selectedAccountId') || '';
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlAccount = urlParams.get('account');
+  if (urlAccount) {
+    selectedAccountId = urlAccount;
+    localStorage.setItem('selectedAccountId', selectedAccountId);
+    window.history.replaceState({}, '', '/');
+  }
+
+  if (!accounts.find(a => a.id === selectedAccountId)) {
+    selectedAccountId = accounts[0].id;
+    localStorage.setItem('selectedAccountId', selectedAccountId);
+  }
+
+  const allOption = accounts.length > 1
+    ? `<option value=""${selectedAccountId === '' ? ' selected' : ''}>All Accounts</option>`
+    : '';
+  accountSelect.innerHTML = allOption + accounts.map(acc => {
+    const name = acc.username ? `@${acc.username}` : acc.display_name || acc.open_id;
+    const selected = acc.id === selectedAccountId ? ' selected' : '';
+    return `<option value="${acc.id}"${selected}>${escapeHtml(name)}</option>`;
+  }).join('');
+
+  accountSelect.addEventListener('change', () => {
+    selectedAccountId = accountSelect.value;
+    localStorage.setItem('selectedAccountId', selectedAccountId);
+    conversations = {};
+    activeConversation = null;
+    chat.innerHTML = '';
+    chatHeader.textContent = 'Select a conversation';
+    msgInput.disabled = true;
+    sendBtn.disabled = true;
+    convList.innerHTML = '';
+    loadChats();
+  });
 }
 
 // --- Chat Loading ---
 
 function loadChats() {
-  const url = selectedChannelId
-    ? `/api/chats?channelId=${encodeURIComponent(selectedChannelId)}`
-    : '/api/chats';
+  let url = '/api/chats';
+  if (providerMode !== 'respondio' && selectedAccountId) {
+    url += `?accountId=${encodeURIComponent(selectedAccountId)}`;
+  }
 
   log('Loading chats...');
   fetch(url)
@@ -127,8 +139,8 @@ socket.on('disconnect', () => {
 });
 
 socket.on('message', (data) => {
-  // Filter real-time messages by selected channel
-  if (selectedChannelId && data.channelId && data.channelId !== selectedChannelId) {
+  // In official mode, filter by selected account
+  if (providerMode !== 'respondio' && selectedAccountId && data.accountId && data.accountId !== selectedAccountId) {
     return;
   }
 
@@ -237,7 +249,7 @@ sendForm.addEventListener('submit', (e) => {
 
   socket.emit('send_message', {
     conversationId: activeConversation,
-    channelId: selectedChannelId,
+    accountId: selectedAccountId,
     text,
   });
 
@@ -258,5 +270,5 @@ function truncate(str, max) {
   return str.length > max ? str.slice(0, max) + '...' : str;
 }
 
-// --- Init ---
-loadChannelSelector();
+// --- Start ---
+init();

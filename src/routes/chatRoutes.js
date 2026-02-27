@@ -18,10 +18,8 @@ export function registerChatRoutes(app, bus, { chatLogPath }) {
       const lines = raw.split('\n').filter(Boolean);
       let chats = lines.map((l) => JSON.parse(l));
 
-      const { accountId, channelId } = req.query;
-      if (channelId) {
-        chats = chats.filter((c) => c.channelId === channelId || !c.channelId);
-      } else if (accountId) {
+      const { accountId } = req.query;
+      if (accountId) {
         chats = chats.filter((c) => c.accountId === accountId || !c.accountId);
       }
 
