@@ -3,11 +3,24 @@ import { existsSync, readFileSync } from 'fs';
 export function registerHealthRoutes(app, { provider, config, chatLogPath }) {
   app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
-  // Temporary debug: see raw contact data from Respond.io
-  app.get('/api/debug/contacts', (req, res) => {
+  // Temporary debug: see raw contact data + channels from Respond.io
+  app.get('/api/debug/contacts', async (req, res) => {
     if (!provider.knownContacts) return res.json([]);
+    const axios = (await import('axios')).default;
     const contacts = Array.from(provider.knownContacts.values()).slice(0, 3);
-    res.json(contacts);
+    const results = [];
+    for (const c of contacts) {
+      try {
+        const chRes = await axios.get(
+          `${provider.apiUrl}/contact/id:${c.id}/channel`,
+          { headers: provider.headers },
+        );
+        results.push({ contact: c, channels: chRes.data });
+      } catch (err) {
+        results.push({ contact: c, channelError: err.response?.data || err.message });
+      }
+    }
+    res.json(results);
   });
 
   app.get('/api/status', (req, res) => {
