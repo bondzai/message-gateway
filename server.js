@@ -35,7 +35,7 @@ new MessageHandler(bus).register();
 new SocketIOTransport(io, bus).register();
 
 registerHealthRoutes(app, { provider, config, chatLogPath });
-registerChatRoutes(app, bus, { chatLogPath });
+registerChatRoutes(app, bus, { chatLogPath, provider });
 registerAccountRoutes(app, config);
 registerAuthRoutes(app, config);
 registerWebhookRoutes(app, provider);

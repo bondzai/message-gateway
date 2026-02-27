@@ -18,7 +18,7 @@ describe('chatRoutes', () => {
     app = express();
     app.use(express.json());
     bus = new EventBus();
-    registerChatRoutes(app, bus, { chatLogPath });
+    registerChatRoutes(app, bus, { chatLogPath, provider: null });
   });
 
   afterEach(() => {

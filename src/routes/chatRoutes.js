@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { Logger } from '../core/Logger.js';
 
-export function registerChatRoutes(app, bus, { chatLogPath }) {
+export function registerChatRoutes(app, bus, { chatLogPath, provider }) {
   bus.on('message', (msg) => {
     try {
       appendFileSync(chatLogPath, JSON.stringify(msg) + '\n');
@@ -33,7 +33,11 @@ export function registerChatRoutes(app, bus, { chatLogPath }) {
   app.delete('/api/chats', (req, res) => {
     try {
       writeFileSync(chatLogPath, '');
-      Logger.info('Chat history cleared');
+      // Reset provider's seen messages so next poll re-syncs
+      if (provider && provider.seenMessageIds) {
+        provider.seenMessageIds.clear();
+      }
+      Logger.info('Chat history cleared — will re-sync on next poll');
       res.json({ success: true });
     } catch (err) {
       Logger.error('Failed to clear chats:', err.message);
