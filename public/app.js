@@ -45,20 +45,13 @@ async function loadAccountSelector() {
       localStorage.setItem('selectedAccountId', selectedAccountId);
     }
 
-    const allOption = accounts.length > 1
-      ? `<option value=""${selectedAccountId === '' ? ' selected' : ''}>All Accounts</option>`
-      : '';
-    accountSelect.innerHTML = allOption + accounts.map(acc => {
-      const name = acc.username ? `@${acc.username}` : acc.display_name || acc.open_id;
-      const selected = acc.id === selectedAccountId ? ' selected' : '';
-      return `<option value="${acc.id}"${selected}>${escapeHtml(name)}</option>`;
-    }).join('');
-
-    accountSelect.addEventListener('change', () => {
-      selectedAccountId = accountSelect.value;
-      localStorage.setItem('selectedAccountId', selectedAccountId);
-      switchAccount();
-    });
+    // Show connected accounts (filtering not possible with Respond.io)
+    const names = accounts.map(acc =>
+      acc.username ? `@${acc.username}` : acc.display_name || acc.open_id
+    );
+    accountSelect.innerHTML = `<option>${escapeHtml(names.join(', '))}</option>`;
+    accountSelect.disabled = true;
+    accountSelect.title = 'Per-account filtering available after migrating to TikTok Business API';
 
     loadChats();
   } catch (err) {
@@ -80,9 +73,9 @@ function switchAccount() {
 // --- Chat Loading ---
 
 function loadChats() {
-  const url = selectedAccountId
-    ? `/api/chats?accountId=${encodeURIComponent(selectedAccountId)}`
-    : '/api/chats';
+  // Respond.io doesn't tag messages with accountId — load all messages
+  // Per-account filtering will work after migrating to TikTok Business API
+  const url = '/api/chats';
 
   log('Loading chats...');
   fetch(url)
@@ -116,11 +109,6 @@ socket.on('disconnect', () => {
 });
 
 socket.on('message', (data) => {
-  // Filter by selected account (show all if no accountId on message)
-  if (selectedAccountId && data.accountId && data.accountId !== selectedAccountId) {
-    return;
-  }
-
   addToConversation(data);
   renderConversationList();
 
