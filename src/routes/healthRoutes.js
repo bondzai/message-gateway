@@ -3,6 +3,13 @@ import { existsSync, readFileSync } from 'fs';
 export function registerHealthRoutes(app, { provider, config, chatLogPath }) {
   app.get('/health', (req, res) => res.status(200).json({ status: 'ok' }));
 
+  // Temporary debug: see raw contact data from Respond.io
+  app.get('/api/debug/contacts', (req, res) => {
+    if (!provider.knownContacts) return res.json([]);
+    const contacts = Array.from(provider.knownContacts.values()).slice(0, 3);
+    res.json(contacts);
+  });
+
   app.get('/api/status', (req, res) => {
     let chatCount = 0;
     try {
