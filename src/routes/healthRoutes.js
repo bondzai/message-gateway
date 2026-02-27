@@ -57,6 +57,17 @@ export function registerHealthRoutes(app, { provider, config, chatLogPath }) {
     res.json(results);
   });
 
+  // List Respond.io channels discovered from contacts
+  app.get('/api/channels', (req, res) => {
+    if (!provider.channelMap) return res.json([]);
+    const channels = Array.from(provider.channelMap.entries()).map(([id, info]) => ({
+      id,
+      name: info.name,
+      source: info.source,
+    }));
+    res.json(channels);
+  });
+
   app.get('/api/status', (req, res) => {
     let chatCount = 0;
     try {

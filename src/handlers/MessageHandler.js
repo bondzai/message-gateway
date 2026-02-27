@@ -9,6 +9,7 @@ export class MessageHandler {
         type: 'dm',
         direction: 'incoming',
         accountId: raw.accountId || '',
+        channelId: raw.channelId || '',
         conversationId: raw.conversationId,
         timestamp: raw.timestamp || new Date().toISOString(),
         user: {

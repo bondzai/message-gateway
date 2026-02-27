@@ -11,55 +11,73 @@ const accountSelect = document.getElementById('account-select');
 
 let conversations = {};
 let activeConversation = null;
-let selectedAccountId = localStorage.getItem('selectedAccountId') || '';
+let selectedChannelId = localStorage.getItem('selectedChannelId') || '';
+let channels = [];
 let accounts = [];
 
 function log(msg) {
   if (debug) debug.textContent = msg;
 }
 
-// --- Account Selector ---
+// --- Channel Selector ---
 
-async function loadAccountSelector() {
+async function loadChannelSelector() {
   try {
-    const res = await fetch('/api/accounts');
-    accounts = await res.json();
-
+    // Check accounts first — redirect if none connected
+    const accRes = await fetch('/api/accounts');
+    accounts = await accRes.json();
     if (!accounts || accounts.length === 0) {
       window.location.href = '/accounts.html';
       return;
     }
 
-    // Check URL param (from accounts page "Open Dashboard" link)
+    // Check URL param (from accounts page "Open Chats" link)
     const urlParams = new URLSearchParams(window.location.search);
     const urlAccount = urlParams.get('account');
     if (urlAccount) {
-      selectedAccountId = urlAccount;
-      localStorage.setItem('selectedAccountId', selectedAccountId);
       window.history.replaceState({}, '', '/');
     }
 
-    // If saved account no longer exists, reset to first
-    if (!accounts.find(a => a.id === selectedAccountId)) {
-      selectedAccountId = accounts[0].id;
-      localStorage.setItem('selectedAccountId', selectedAccountId);
+    // Fetch discovered channels from Respond.io
+    const chRes = await fetch('/api/channels');
+    channels = await chRes.json();
+
+    if (channels.length === 0) {
+      // No channels discovered yet — show all chats
+      accountSelect.innerHTML = '<option value="">All Channels</option>';
+      accountSelect.disabled = true;
+      loadChats();
+      return;
     }
 
-    // Show connected accounts (filtering not possible with Respond.io)
-    const names = accounts.map(acc =>
-      acc.username ? `@${acc.username}` : acc.display_name || acc.open_id
-    );
-    accountSelect.innerHTML = `<option>${escapeHtml(names.join(', '))}</option>`;
-    accountSelect.disabled = true;
-    accountSelect.title = 'Per-account filtering available after migrating to TikTok Business API';
+    // If saved channel no longer exists, reset
+    if (selectedChannelId && !channels.find(c => c.id === selectedChannelId)) {
+      selectedChannelId = '';
+      localStorage.setItem('selectedChannelId', '');
+    }
+
+    const allOption = channels.length > 1
+      ? `<option value=""${selectedChannelId === '' ? ' selected' : ''}>All Channels</option>`
+      : '';
+    accountSelect.innerHTML = allOption + channels.map(ch => {
+      const selected = ch.id === selectedChannelId ? ' selected' : '';
+      return `<option value="${ch.id}"${selected}>${escapeHtml(ch.name)}</option>`;
+    }).join('');
+    accountSelect.disabled = false;
+
+    accountSelect.addEventListener('change', () => {
+      selectedChannelId = accountSelect.value;
+      localStorage.setItem('selectedChannelId', selectedChannelId);
+      switchChannel();
+    });
 
     loadChats();
   } catch (err) {
-    log('Failed to load accounts');
+    log('Failed to load channels');
   }
 }
 
-function switchAccount() {
+function switchChannel() {
   conversations = {};
   activeConversation = null;
   chat.innerHTML = '';
@@ -73,9 +91,9 @@ function switchAccount() {
 // --- Chat Loading ---
 
 function loadChats() {
-  // Respond.io doesn't tag messages with accountId — load all messages
-  // Per-account filtering will work after migrating to TikTok Business API
-  const url = '/api/chats';
+  const url = selectedChannelId
+    ? `/api/chats?channelId=${encodeURIComponent(selectedChannelId)}`
+    : '/api/chats';
 
   log('Loading chats...');
   fetch(url)
@@ -109,6 +127,11 @@ socket.on('disconnect', () => {
 });
 
 socket.on('message', (data) => {
+  // Filter real-time messages by selected channel
+  if (selectedChannelId && data.channelId && data.channelId !== selectedChannelId) {
+    return;
+  }
+
   addToConversation(data);
   renderConversationList();
 
@@ -214,7 +237,7 @@ sendForm.addEventListener('submit', (e) => {
 
   socket.emit('send_message', {
     conversationId: activeConversation,
-    accountId: selectedAccountId,
+    channelId: selectedChannelId,
     text,
   });
 
@@ -236,4 +259,4 @@ function truncate(str, max) {
 }
 
 // --- Init ---
-loadAccountSelector();
+loadChannelSelector();

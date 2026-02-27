@@ -12,6 +12,8 @@ export class RespondIOProvider extends BaseProvider {
     this.apiUrl = config.thirdParty.apiUrl || API_BASE;
     this.knownContacts = new Map();
     this.seenMessageIds = new Set();
+    this.channelMap = new Map(); // channelId → channel info (name, source)
+    this.contactChannelCache = new Map(); // contactId → channelId
     this.pollTimer = null;
     this._lastErrorStatus = null;
     this._firstPoll = true;
@@ -126,6 +128,33 @@ export class RespondIOProvider extends BaseProvider {
     }
   }
 
+  async _resolveChannelId(contactId) {
+    if (this.contactChannelCache.has(String(contactId))) {
+      return this.contactChannelCache.get(String(contactId));
+    }
+    try {
+      const res = await axios.get(
+        `${this.apiUrl}/contact/id:${contactId}/channels`,
+        { headers: this.headers },
+      );
+      const channels = res.data?.items || [];
+      if (channels.length > 0) {
+        const ch = channels[0];
+        this.contactChannelCache.set(String(contactId), String(ch.id));
+        if (!this.channelMap.has(String(ch.id))) {
+          this.channelMap.set(String(ch.id), {
+            name: ch.name,
+            source: ch.source,
+          });
+        }
+        return String(ch.id);
+      }
+    } catch {
+      // skip — will retry next poll
+    }
+    return '';
+  }
+
   async _fetchMessages(contact) {
     try {
       const id = contact.id;
@@ -136,13 +165,25 @@ export class RespondIOProvider extends BaseProvider {
 
       const messages = (res.data?.items || []).reverse(); // oldest-first
 
+      // Resolve channel for this contact (cached after first lookup)
+      let channelId = '';
+      for (const msg of messages) {
+        if (msg.channelId) {
+          channelId = String(msg.channelId);
+          this.contactChannelCache.set(String(id), channelId);
+          break;
+        }
+      }
+      if (!channelId) {
+        channelId = await this._resolveChannelId(id);
+      }
+
       for (const msg of messages) {
         const msgId = String(msg.messageId);
 
         if (this.seenMessageIds.has(msgId)) continue;
         this.seenMessageIds.add(msgId);
 
-        // On first poll, mark all as seen but still emit them to populate dashboard
         const direction = msg.traffic === 'outgoing' ? 'outgoing' : 'incoming';
         const text = msg.message?.text || msg.message?.content || '';
 
@@ -151,6 +192,7 @@ export class RespondIOProvider extends BaseProvider {
         this.eventBus.emit(direction === 'incoming' ? 'dm:incoming' : 'message', {
           type: 'dm',
           direction,
+          channelId: channelId || String(msg.channelId || ''),
           conversationId: String(id),
           user: direction === 'incoming'
             ? {
@@ -166,7 +208,7 @@ export class RespondIOProvider extends BaseProvider {
             : new Date().toISOString(),
         });
       }
-    } catch (err) {
+    } catch {
       // Silently skip — will retry next poll
     }
   }
