@@ -77,7 +77,9 @@ function switchAccount() {
 // --- Chat Loading ---
 
 function loadChats() {
-  const url = selectedAccountId
+  // Only filter by account when multiple accounts exist
+  const useFilter = selectedAccountId && accounts.length > 1;
+  const url = useFilter
     ? `/api/chats?accountId=${encodeURIComponent(selectedAccountId)}`
     : '/api/chats';
 

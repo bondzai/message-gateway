@@ -8,6 +8,7 @@ export class MessageHandler {
       const normalized = {
         type: 'dm',
         direction: 'incoming',
+        accountId: raw.accountId || '',
         conversationId: raw.conversationId,
         timestamp: raw.timestamp || new Date().toISOString(),
         user: {
