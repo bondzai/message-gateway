@@ -17,11 +17,9 @@ export function registerAuthRoutes(app, config) {
       return res.status(400).send('TIKTOK_CLIENT_KEY not configured in .env');
     }
 
-    const codeVerifier = generateCodeVerifier();
-    const codeChallenge = generateCodeChallenge(codeVerifier);
     const state = randomBytes(16).toString('hex');
 
-    pendingOAuth.set(state, { codeVerifier });
+    pendingOAuth.set(state, {});
 
     const redirectUri = buildRedirectUri(req);
     Logger.info(`OAuth redirect_uri: ${redirectUri}`);
@@ -30,9 +28,7 @@ export function registerAuthRoutes(app, config) {
       + `&response_type=code`
       + `&scope=user.info.basic`
       + `&redirect_uri=${encodeURIComponent(redirectUri)}`
-      + `&state=${state}`
-      + `&code_challenge=${codeChallenge}`
-      + `&code_challenge_method=S256`;
+      + `&state=${state}`;
 
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.set('Pragma', 'no-cache');
@@ -60,7 +56,6 @@ export function registerAuthRoutes(app, config) {
           code,
           grant_type: 'authorization_code',
           redirect_uri: redirectUri,
-          code_verifier: pending.codeVerifier,
         }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
       );
