@@ -12,7 +12,6 @@ const conversations = {};
 let activeConversation = null;
 
 function log(msg) {
-  console.log(msg);
   if (debug) debug.textContent = msg;
 }
 

@@ -23,7 +23,11 @@ export class EventBus {
     const listeners = this._listeners.get(event);
     if (!listeners) return this;
     for (const cb of listeners) {
-      cb(...args);
+      try {
+        cb(...args);
+      } catch (err) {
+        console.error(`[EventBus] Error in "${event}" listener:`, err);
+      }
     }
     return this;
   }

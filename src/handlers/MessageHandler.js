@@ -1,5 +1,3 @@
-import { Logger } from '../core/Logger.js';
-
 export class MessageHandler {
   constructor(eventBus) {
     this.eventBus = eventBus;
@@ -24,7 +22,6 @@ export class MessageHandler {
         },
       };
 
-      Logger.info(`DM from @${normalized.user.username}: ${normalized.message.content}`);
       this.eventBus.emit('message', normalized);
     });
 

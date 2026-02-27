@@ -34,8 +34,6 @@ export class ThirdPartyProvider extends BaseProvider {
       }
     }
 
-    Logger.info(`Respond.io webhook: ${body.event || 'unknown event'}`);
-
     // Respond.io "message.created" event payload:
     // { event: "message.created", data: { content: {...}, contact: {...}, ... } }
     if (body.event === 'message.created' || body.data?.message || body.data?.content) {
@@ -61,7 +59,6 @@ export class ThirdPartyProvider extends BaseProvider {
           : new Date().toISOString(),
       };
 
-      Logger.info(`DM from ${payload.user.nickname}: ${payload.message.content}`);
       this.eventBus.emit('dm:incoming', payload);
     }
 
@@ -90,7 +87,6 @@ export class ThirdPartyProvider extends BaseProvider {
         },
       );
 
-      Logger.info(`Message sent via Respond.io to contact ${contactId}`);
       return { success: true, data: response.data };
     } catch (err) {
       Logger.error('Respond.io send error:', err.response?.data || err.message);

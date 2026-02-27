@@ -629,6 +629,54 @@ The REAL limits are not technical — they are:
 
 ---
 
+## PoC Project Structure (Current)
+
+```
+server.js                          # Slim orchestrator (~80 lines)
+vitest.config.js                   # Test configuration
+src/
+  config.js                        # Environment config loader
+  auth/
+    pkce.js                        # PKCE code_verifier / code_challenge
+    pendingOAuth.js                # In-memory OAuth state store
+  accounts/
+    accountStore.js                # Account persistence (JSON file)
+  core/
+    EventBus.js                    # Pub/sub with error isolation
+    Logger.js                      # Timestamped console logging
+  handlers/
+    MessageHandler.js              # Normalize incoming DM payloads
+  transport/
+    SocketIOTransport.js           # Socket.IO ↔ EventBus bridge
+  providers/
+    providerFactory.js             # Factory: config → Provider instance
+    BaseProvider.js                # Abstract provider interface
+    TikTokOfficialProvider.js      # TikTok Business Messaging API
+    ThirdPartyProvider.js          # Generic third-party adapter
+    RespondIOProvider.js           # Respond.io polling provider
+  routes/
+    healthRoutes.js                # GET /health, /api/status
+    chatRoutes.js                  # GET /api/chats + JSONL logger
+    accountRoutes.js               # GET/DELETE /api/accounts
+    authRoutes.js                  # OAuth connect/callback
+    webhookRoutes.js               # Webhook verify + inbound
+tests/
+  core/EventBus.test.js
+  auth/pkce.test.js
+  accounts/accountStore.test.js
+  routes/accountRoutes.test.js
+  routes/authRoutes.test.js
+  providers/providerFactory.test.js
+public/
+  index.html                       # Chat dashboard
+  app.js                           # Dashboard client logic
+  accounts.html                    # Account management page
+  accounts.js                      # Accounts page client logic
+  style.css                        # Dark theme
+```
+
+---
+
 ## Tech Stack
 
 ```

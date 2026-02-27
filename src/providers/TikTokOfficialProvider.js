@@ -16,7 +16,6 @@ export class TikTokOfficialProvider extends BaseProvider {
     const challenge = req.query.challenge;
 
     if (token === this.verifyToken && challenge) {
-      Logger.info('Webhook verification successful');
       return res.status(200).send(challenge);
     }
 
@@ -30,8 +29,6 @@ export class TikTokOfficialProvider extends BaseProvider {
     if (!body || !body.event) {
       return res.status(400).json({ error: 'Invalid payload' });
     }
-
-    Logger.info(`Incoming webhook event: ${body.event}`);
 
     if (body.event === 'message') {
       const payload = {
@@ -76,7 +73,6 @@ export class TikTokOfficialProvider extends BaseProvider {
         },
       );
 
-      Logger.info(`Message sent to conversation ${conversationId}`);
       return { success: true, data: response.data };
     } catch (err) {
       const status = err.response?.status;

@@ -68,7 +68,6 @@ export class RespondIOProvider extends BaseProvider {
       );
 
       const msgId = response.data?.messageId;
-      Logger.info(`Reply sent to contact ${contactId} (msgId: ${msgId})`);
       // Track the messageId so polling doesn't emit it as a duplicate
       if (msgId) this.seenMessageIds.add(String(msgId));
       return { success: true, data: response.data };
@@ -108,7 +107,6 @@ export class RespondIOProvider extends BaseProvider {
 
         if (!this.knownContacts.has(id)) {
           this.knownContacts.set(id, contact);
-          Logger.info(`${this._firstPoll ? 'Loaded' : 'New'}: ${contact.firstName || id} (${id})`);
         }
 
         // Fetch latest messages for this contact
@@ -149,13 +147,6 @@ export class RespondIOProvider extends BaseProvider {
         const text = msg.message?.text || msg.message?.content || '';
 
         if (!text) continue;
-
-        if (!this._firstPoll) {
-          // Only log new messages after first poll
-          if (direction === 'incoming') {
-            Logger.info(`DM from ${contact.firstName || id}: ${text}`);
-          }
-        }
 
         this.eventBus.emit(direction === 'incoming' ? 'dm:incoming' : 'message', {
           type: 'dm',
