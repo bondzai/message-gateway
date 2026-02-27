@@ -10,22 +10,103 @@ make install
 make dev               # http://localhost:3000
 ```
 
-## Data Flow
+---
+
+## Current Architecture (Phase 1)
+
+We use **two separate services** because TikTok's DM API requires a special partnership we don't have yet.
 
 ```
-TikTok Platform
-       |
-       v
-Respond.io (Phase 1)  or  TikTok API (Phase 2)
-       |                        |
-       | polling (1s)           | webhooks
-       v                        v
-Our Server (Node.js + Express + EventBus)
-       |
-       | Socket.IO
-       v
-Web Dashboard (browser)
+                    ┌──────────────────────────────────────────┐
+                    │            TikTok Platform                │
+                    └──────┬──────────────────┬────────────────┘
+                           │                  │
+                    DM messages         User identity
+                           │                  │
+                           ▼                  ▼
+                    ┌──────────────┐   ┌──────────────────┐
+                    │  Respond.io  │   │ TikTok Login Kit │
+                    │  (3rd party) │   │ (developers.      │
+                    │              │   │  tiktok.com)      │
+                    └──────┬───────┘   └────────┬─────────┘
+                           │                    │
+                    polling (1s)          OAuth callback
+                           │                    │
+                           ▼                    ▼
+                    ┌──────────────────────────────────────┐
+                    │         Our Server (Express)         │
+                    │                                      │
+                    │  RespondIOProvider    authRoutes.js   │
+                    │  (read/send DMs)     (connect account)│
+                    └──────────────┬───────────────────────┘
+                                   │
+                            Socket.IO
+                                   │
+                                   ▼
+                    ┌──────────────────────────────────────┐
+                    │        Web Dashboard (browser)       │
+                    │                                      │
+                    │  index.html          accounts.html   │
+                    │  (chat view)        (manage accounts) │
+                    └──────────────────────────────────────┘
 ```
+
+### Why Two Services?
+
+| Service | What it does | Why we need it |
+|---|---|---|
+| **Respond.io** | Reads and sends TikTok DMs | TikTok's direct DM API (Business Messaging API) requires partner approval we don't have yet |
+| **TikTok Login Kit** | "Connect TikTok Account" button — verifies user identity | Lets users link their TikTok account to our dashboard |
+
+### What Each Service Handles
+
+| Feature | Handled by | Platform |
+|---|---|---|
+| Read incoming DMs | Respond.io | respond.io |
+| Send reply DMs | Respond.io | respond.io |
+| "Connect Account" button | TikTok Login Kit | developers.tiktok.com |
+| Show user profile (name, avatar) | TikTok Login Kit | developers.tiktok.com |
+| Disconnect account | Our server | local |
+
+### Demo Flow (for stakeholders)
+
+1. User opens **Accounts page** → clicks **"Connect TikTok Account"**
+2. Redirected to TikTok → grants permission → redirected back *(Login Kit)*
+3. Account appears with name and avatar
+4. User opens **Dashboard** → sees live DM conversations *(Respond.io)*
+5. User clicks a conversation → types a reply → message sent *(Respond.io)*
+
+---
+
+## Future Architecture (Phase 2 — after Business API approval)
+
+```
+                    ┌──────────────────────────────────────────┐
+                    │            TikTok Platform                │
+                    └──────────────────┬───────────────────────┘
+                                       │
+                              Webhooks (real-time)
+                              + Direct API calls
+                                       │
+                                       ▼
+                    ┌──────────────────────────────────────┐
+                    │         Our Server (Express)         │
+                    │                                      │
+                    │  TikTokOfficialProvider               │
+                    │  (read/send DMs directly)            │
+                    └──────────────┬───────────────────────┘
+                                   │
+                            Socket.IO
+                                   │
+                                   ▼
+                    ┌──────────────────────────────────────┐
+                    │        Web Dashboard (browser)       │
+                    └──────────────────────────────────────┘
+```
+
+**What changes:** Respond.io is removed. DMs go directly through TikTok's Business Messaging API. No 3rd party cost, real-time webhooks instead of polling.
+
+**What's needed:** Register at [business-api.tiktok.com](https://business-api.tiktok.com/portal/developer/register) and get approved for Business Messaging API. See [tiktok-platforms.md](./tiktok-platforms.md) for details.
 
 ---
 
@@ -82,26 +163,12 @@ Returns `{ messageId, contactId }` — we track `messageId` to prevent polling d
 
 ---
 
-## TikTok Official API (Phase 2)
+## TikTok Login Kit (Account Linking)
 
-> **Status:** Ready in codebase, needs TikTok developer approval
+> **Platform:** developers.tiktok.com
+> **Purpose:** Connect/disconnect TikTok accounts (identity only, not DMs)
 > **Auth:** OAuth 2.0 (Web — no PKCE)
 > **Full setup guide:** [tiktok-oauth-setup.md](./tiktok-oauth-setup.md)
-
-### Requirements
-
-| Requirement | Detail |
-|---|---|
-| Account | TikTok Business Account |
-| Region | Thailand (not US/EU/UK) |
-| Approval | 3–4 weeks as Messaging Partner |
-
-### Messaging Constraints
-
-- User must message first (business cannot initiate)
-- 48-hour reply window from last user message
-- Max 10 outbound messages per window
-- Text + image only
 
 ### OAuth Flow
 
@@ -131,39 +198,30 @@ client_key=<KEY>&client_secret=<SECRET>&code=<CODE>
 | Access token | 24 hours |
 | Refresh token | 365 days |
 
-### Endpoints
+---
+
+## TikTok Business Messaging API (Phase 2 — Not Yet Available)
+
+> **Platform:** business-api.tiktok.com (separate from developers.tiktok.com)
+> **Status:** Need to register and get approved
+> **Details:** [tiktok-platforms.md](./tiktok-platforms.md)
+
+### Endpoints (after approval)
 
 | Action | Method | Endpoint |
 |---|---|---|
-| Send message | `POST` | `https://open.tiktokapis.com/v2/im/message/send/` |
-| List conversations | `GET` | `https://business-api.tiktok.com/.../conversation/list/` |
-| List messages | `GET` | `https://business-api.tiktok.com/.../message/list/` |
-| OAuth token | `POST` | `https://open.tiktokapis.com/v2/oauth/token/` |
-| Revoke token | `POST` | `https://open.tiktokapis.com/v2/oauth/revoke/` |
+| Send message | `POST` | `/message/send` |
+| List conversations | `GET` | `/conversation/list` |
+| List messages | `GET` | `/message/list` |
+| Upload image | `POST` | `/image/upload` |
+| Create webhook | `POST` | `/webhook/create` |
 
-### Webhooks
+### Messaging Constraints
 
-Register in TikTok Developer Portal. Verification:
-
-```http
-GET /webhook/tiktok?verify_token=<SECRET>&challenge=abc123
-→ Response: abc123
-```
-
-Incoming message event:
-```http
-POST /webhook/tiktok
-X-TT-Webhook-Signature: sha256=<hmac_hex>
-```
-
-Verify with:
-```javascript
-const expected = 'sha256=' + crypto
-  .createHmac('sha256', CLIENT_SECRET)
-  .update(rawBody).digest('hex');
-```
-
-Rate limit: 600 req/min per endpoint.
+- User must message first (business cannot initiate)
+- 48-hour reply window from last user message
+- Max 10 outbound messages per window
+- Text + image only
 
 ---
 
@@ -200,10 +258,10 @@ Rate limit: 600 req/min per endpoint.
 Change one env var to switch providers:
 
 ```bash
-# Phase 1 (current)
+# Phase 1 (current) — DMs via Respond.io
 PROVIDER=respondio
 
-# Phase 2
+# Phase 2 (future) — DMs directly via TikTok
 PROVIDER=official
 ```
 
@@ -232,10 +290,8 @@ Register in `src/providers/providerFactory.js`.
 | `PROVIDER` | Yes | `respondio`, `thirdparty`, or `official` |
 | `THIRDPARTY_API_KEY` | If respondio | Respond.io API token |
 | `THIRDPARTY_API_URL` | If respondio | `https://api.respond.io/v2` |
-| `TIKTOK_CLIENT_KEY` | If official | TikTok app client key |
-| `TIKTOK_CLIENT_SECRET` | If official | TikTok app client secret |
-| `TIKTOK_ACCESS_TOKEN` | If official | OAuth access token |
-| `TIKTOK_REFRESH_TOKEN` | If official | OAuth refresh token |
+| `TIKTOK_CLIENT_KEY` | For account linking | TikTok Login Kit client key (from Sandbox tab) |
+| `TIKTOK_CLIENT_SECRET` | For account linking | TikTok Login Kit client secret (from Sandbox tab) |
 | `WEBHOOK_VERIFY_TOKEN` | If official | Webhook verification secret |
 
 ---
@@ -246,7 +302,7 @@ Register in `src/providers/providerFactory.js`.
 # Terminal 1 — start server
 make dev
 
-# Terminal 2 — simulate webhook
+# Terminal 2 — simulate incoming message
 curl -X POST http://localhost:3000/webhook/tiktok \
   -H 'Content-Type: application/json' \
   -d '{"contact":{"id":"1","first_name":"Test"},"conversation_id":"conv_1","message_content":"Hello!","message_type":"text","message_timestamp":"2026-02-27T10:00:00Z"}'
@@ -258,8 +314,15 @@ Open http://localhost:3000 — message appears.
 
 | Problem | Fix |
 |---|---|
-| No messages arriving | Check webhook URL registered + ngrok running |
+| No messages arriving | Check Respond.io API token in `.env` |
 | "No API URL" on reply | Set `THIRDPARTY_API_URL` in `.env` |
-| 48h window expired | Customer must send a new message |
-| TikTok OAuth fails | See [tiktok-oauth-setup.md](./tiktok-oauth-setup.md) for full troubleshooting |
+| TikTok OAuth fails | See [tiktok-oauth-setup.md](./tiktok-oauth-setup.md) |
 | Messages duplicated | Check `seenMessageIds` in `/api/status` |
+| Account connect works in incognito only | Clear TikTok site data in browser, see [tiktok-oauth-setup.md](./tiktok-oauth-setup.md#browser-caching-issues) |
+
+## Related Docs
+
+- [TikTok OAuth Setup Guide](./tiktok-oauth-setup.md) — step-by-step Login Kit setup, common errors
+- [TikTok Platforms Comparison](./tiktok-platforms.md) — developers.tiktok.com vs business-api.tiktok.com
+- [Architecture](./architecture.md) — multi-tenant SaaS design
+- [Cost Comparison](./cost-comparison.md) — Respond.io vs direct API costs
