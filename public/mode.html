@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Select Mode — Vulcan AI</title>
+  <link rel="stylesheet" href="style.css?v=4">
+  <style>
+    .page { max-width: 600px; margin: 0 auto; padding: 48px 20px; text-align: center; }
+    .page h2 { font-size: 24px; margin-bottom: 8px; }
+    .page p.sub { color: #888; font-size: 14px; margin-bottom: 32px; }
+
+    .mode-cards { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+
+    .mode-card {
+      flex: 1; min-width: 220px; max-width: 260px;
+      padding: 28px 20px; background: #1a1a1a; border-radius: 12px;
+      border: 2px solid #2a2a2a; cursor: pointer; text-align: center;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .mode-card:hover { border-color: #444; background: #222; }
+    .mode-card h3 { font-size: 16px; margin-bottom: 8px; }
+    .mode-card p { color: #888; font-size: 13px; line-height: 1.5; }
+    .mode-card .tag {
+      display: inline-block; margin-top: 12px; padding: 4px 10px;
+      border-radius: 4px; font-size: 11px; font-weight: 600;
+    }
+    .tag-active { background: #1a3a1a; color: #4caf50; }
+    .tag-soon { background: #3a3a1a; color: #ffb300; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Vulcan AI</h1>
+  </header>
+  <div class="page">
+    <h2>Choose Your Mode</h2>
+    <p class="sub">How do you want to connect to TikTok DMs?</p>
+
+    <div class="mode-cards">
+      <div class="mode-card" onclick="selectMode('respondio')">
+        <h3>Respond.io</h3>
+        <p>Connect via Respond.io API. No TikTok account login needed. All conversations in one view.</p>
+        <span class="tag tag-active">Ready</span>
+      </div>
+      <div class="mode-card" onclick="selectMode('official')">
+        <h3>Official API</h3>
+        <p>Connect directly via TikTok Business API. Per-account filtering. Requires TikTok login.</p>
+        <span class="tag tag-soon">Coming Soon</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // If mode already selected, go straight to dashboard
+    const saved = localStorage.getItem('vulcan_mode');
+    if (saved) {
+      window.location.href = '/';
+    }
+
+    function selectMode(mode) {
+      localStorage.setItem('vulcan_mode', mode);
+      if (mode === 'official') {
+        window.location.href = '/accounts.html';
+      } else {
+        window.location.href = '/';
+      }
+    }
+  </script>
+</body>
+</html>

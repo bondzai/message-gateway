@@ -12,7 +12,7 @@ const modeBadge = document.getElementById('mode-badge');
 
 let conversations = {};
 let activeConversation = null;
-let providerMode = 'official';
+let providerMode = '';
 let selectedAccountId = '';
 let accounts = [];
 
@@ -23,17 +23,35 @@ function log(msg) {
 // --- Init ---
 
 async function init() {
+  // Check if user has chosen a mode
+  providerMode = localStorage.getItem('vulcan_mode') || '';
+  if (!providerMode) {
+    window.location.href = '/mode.html';
+    return;
+  }
+
+  if (modeBadge) {
+    modeBadge.textContent = providerMode === 'respondio' ? 'Respond.io' : 'Official API';
+    modeBadge.style.cursor = 'pointer';
+    modeBadge.title = 'Click to change mode';
+    modeBadge.addEventListener('click', () => {
+      localStorage.removeItem('vulcan_mode');
+      window.location.href = '/mode.html';
+    });
+  }
+
+  if (providerMode === 'respondio') {
+    // No login needed — just load chats
+    accountSelect.style.display = 'none';
+    loadChats();
+  } else {
+    // Official API mode — need accounts
+    await initOfficialMode();
+  }
+}
+
+async function initOfficialMode() {
   try {
-    // 1. Detect provider mode
-    const modeRes = await fetch('/api/mode');
-    const { mode } = await modeRes.json();
-    providerMode = mode;
-
-    if (modeBadge) {
-      modeBadge.textContent = mode === 'respondio' ? 'Respond.io' : 'Official API';
-    }
-
-    // 2. Check accounts
     const accRes = await fetch('/api/accounts');
     accounts = await accRes.json();
     if (!accounts || accounts.length === 0) {
@@ -41,69 +59,54 @@ async function init() {
       return;
     }
 
-    // 3. Setup UI based on mode
-    if (mode === 'respondio') {
-      initRespondioMode();
-    } else {
-      initOfficialMode();
+    selectedAccountId = localStorage.getItem('selectedAccountId') || '';
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlAccount = urlParams.get('account');
+    if (urlAccount) {
+      selectedAccountId = urlAccount;
+      localStorage.setItem('selectedAccountId', selectedAccountId);
+      window.history.replaceState({}, '', '/');
     }
+
+    if (!accounts.find(a => a.id === selectedAccountId)) {
+      selectedAccountId = accounts[0].id;
+      localStorage.setItem('selectedAccountId', selectedAccountId);
+    }
+
+    const allOption = accounts.length > 1
+      ? `<option value=""${selectedAccountId === '' ? ' selected' : ''}>All Accounts</option>`
+      : '';
+    accountSelect.innerHTML = allOption + accounts.map(acc => {
+      const name = acc.username ? `@${acc.username}` : acc.display_name || acc.open_id;
+      const selected = acc.id === selectedAccountId ? ' selected' : '';
+      return `<option value="${acc.id}"${selected}>${escapeHtml(name)}</option>`;
+    }).join('');
+
+    accountSelect.addEventListener('change', () => {
+      selectedAccountId = accountSelect.value;
+      localStorage.setItem('selectedAccountId', selectedAccountId);
+      conversations = {};
+      activeConversation = null;
+      chat.innerHTML = '';
+      chatHeader.textContent = 'Select a conversation';
+      msgInput.disabled = true;
+      sendBtn.disabled = true;
+      convList.innerHTML = '';
+      loadChats();
+    });
 
     loadChats();
   } catch (err) {
-    log('Failed to initialize');
+    log('Failed to load accounts');
   }
-}
-
-function initRespondioMode() {
-  // No filtering — show all conversations
-  accountSelect.style.display = 'none';
-}
-
-function initOfficialMode() {
-  // Account selector for future Business API filtering
-  selectedAccountId = localStorage.getItem('selectedAccountId') || '';
-
-  const urlParams = new URLSearchParams(window.location.search);
-  const urlAccount = urlParams.get('account');
-  if (urlAccount) {
-    selectedAccountId = urlAccount;
-    localStorage.setItem('selectedAccountId', selectedAccountId);
-    window.history.replaceState({}, '', '/');
-  }
-
-  if (!accounts.find(a => a.id === selectedAccountId)) {
-    selectedAccountId = accounts[0].id;
-    localStorage.setItem('selectedAccountId', selectedAccountId);
-  }
-
-  const allOption = accounts.length > 1
-    ? `<option value=""${selectedAccountId === '' ? ' selected' : ''}>All Accounts</option>`
-    : '';
-  accountSelect.innerHTML = allOption + accounts.map(acc => {
-    const name = acc.username ? `@${acc.username}` : acc.display_name || acc.open_id;
-    const selected = acc.id === selectedAccountId ? ' selected' : '';
-    return `<option value="${acc.id}"${selected}>${escapeHtml(name)}</option>`;
-  }).join('');
-
-  accountSelect.addEventListener('change', () => {
-    selectedAccountId = accountSelect.value;
-    localStorage.setItem('selectedAccountId', selectedAccountId);
-    conversations = {};
-    activeConversation = null;
-    chat.innerHTML = '';
-    chatHeader.textContent = 'Select a conversation';
-    msgInput.disabled = true;
-    sendBtn.disabled = true;
-    convList.innerHTML = '';
-    loadChats();
-  });
 }
 
 // --- Chat Loading ---
 
 function loadChats() {
   let url = '/api/chats';
-  if (providerMode !== 'respondio' && selectedAccountId) {
+  if (providerMode === 'official' && selectedAccountId) {
     url += `?accountId=${encodeURIComponent(selectedAccountId)}`;
   }
 
@@ -139,8 +142,7 @@ socket.on('disconnect', () => {
 });
 
 socket.on('message', (data) => {
-  // In official mode, filter by selected account
-  if (providerMode !== 'respondio' && selectedAccountId && data.accountId && data.accountId !== selectedAccountId) {
+  if (providerMode === 'official' && selectedAccountId && data.accountId && data.accountId !== selectedAccountId) {
     return;
   }
 
