@@ -1,3 +1,13 @@
+// Check if user has connected a TikTok account — redirect to login if not
+fetch('/api/accounts')
+  .then(r => r.json())
+  .then(accounts => {
+    if (!accounts || accounts.length === 0) {
+      window.location.href = '/accounts.html';
+    }
+  })
+  .catch(() => {});
+
 const socket = io({ transports: ['polling', 'websocket'], upgrade: true });
 const chat = document.getElementById('chat');
 const status = document.getElementById('status');

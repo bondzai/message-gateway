@@ -23,11 +23,9 @@ describe('authRoutes', () => {
     expect(location).toContain('tiktok.com/v2/auth/authorize');
     expect(location).toContain('client_key=test-key');
     expect(location).toContain('scope=user.info.basic');
-    expect(location).toContain('code_challenge_method=S256');
     expect(location).toContain('state=');
-    // TikTok requires hex-encoded SHA256 code_challenge (64 hex chars)
-    const challenge = new URL(location).searchParams.get('code_challenge');
-    expect(challenge).toMatch(/^[0-9a-f]{64}$/);
+    // Web apps do NOT use PKCE (code_challenge) — that's Desktop only
+    expect(location).not.toContain('code_challenge');
   });
 
   it('GET /auth/connect returns 400 when clientKey is missing', async () => {
