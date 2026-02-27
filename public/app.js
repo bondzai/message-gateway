@@ -45,7 +45,10 @@ async function loadAccountSelector() {
       localStorage.setItem('selectedAccountId', selectedAccountId);
     }
 
-    accountSelect.innerHTML = accounts.map(acc => {
+    const allOption = accounts.length > 1
+      ? `<option value=""${selectedAccountId === '' ? ' selected' : ''}>All Accounts</option>`
+      : '';
+    accountSelect.innerHTML = allOption + accounts.map(acc => {
       const name = acc.username ? `@${acc.username}` : acc.display_name || acc.open_id;
       const selected = acc.id === selectedAccountId ? ' selected' : '';
       return `<option value="${acc.id}"${selected}>${escapeHtml(name)}</option>`;
@@ -77,9 +80,7 @@ function switchAccount() {
 // --- Chat Loading ---
 
 function loadChats() {
-  // Only filter by account when multiple accounts exist
-  const useFilter = selectedAccountId && accounts.length > 1;
-  const url = useFilter
+  const url = selectedAccountId
     ? `/api/chats?accountId=${encodeURIComponent(selectedAccountId)}`
     : '/api/chats';
 

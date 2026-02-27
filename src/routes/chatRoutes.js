@@ -20,7 +20,7 @@ export function registerChatRoutes(app, bus, { chatLogPath }) {
 
       const { accountId } = req.query;
       if (accountId) {
-        chats = chats.filter((c) => c.accountId === accountId);
+        chats = chats.filter((c) => c.accountId === accountId || !c.accountId);
       }
 
       res.json(chats);

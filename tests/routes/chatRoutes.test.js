@@ -41,16 +41,17 @@ describe('chatRoutes', () => {
     expect(res.body).toHaveLength(2);
   });
 
-  it('GET /api/chats?accountId filters by account', async () => {
+  it('GET /api/chats?accountId filters by account and includes untagged', async () => {
     const msg1 = { conversationId: 'c1', accountId: 'a1', message: { content: 'hi' } };
     const msg2 = { conversationId: 'c2', accountId: 'a2', message: { content: 'hello' } };
     const msg3 = { conversationId: 'c3', accountId: 'a1', message: { content: 'hey' } };
-    writeFileSync(chatLogPath, [msg1, msg2, msg3].map(m => JSON.stringify(m)).join('\n') + '\n');
+    const msg4 = { conversationId: 'c4', message: { content: 'untagged' } };
+    writeFileSync(chatLogPath, [msg1, msg2, msg3, msg4].map(m => JSON.stringify(m)).join('\n') + '\n');
 
     const res = await request(app).get('/api/chats?accountId=a1');
     expect(res.status).toBe(200);
-    expect(res.body).toHaveLength(2);
-    expect(res.body.every(m => m.accountId === 'a1')).toBe(true);
+    expect(res.body).toHaveLength(3);
+    expect(res.body.every(m => m.accountId === 'a1' || !m.accountId)).toBe(true);
   });
 
   it('saves messages emitted on the bus', async () => {
