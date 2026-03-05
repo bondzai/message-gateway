@@ -1,8 +1,16 @@
 import 'dotenv/config';
 
-const config = Object.freeze({
+function deepFreeze(obj) {
+  for (const val of Object.values(obj)) {
+    if (val && typeof val === 'object') deepFreeze(val);
+  }
+  return Object.freeze(obj);
+}
+
+const config = deepFreeze({
   port: parseInt(process.env.PORT, 10) || 3000,
   provider: process.env.PROVIDER || 'official',
+  apiSecret: process.env.API_SECRET || '',
   tiktok: {
     clientKey: process.env.TIKTOK_CLIENT_KEY || '',
     clientSecret: process.env.TIKTOK_CLIENT_SECRET || '',

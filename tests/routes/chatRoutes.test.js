@@ -13,15 +13,17 @@ describe('chatRoutes', () => {
   beforeEach(() => {
     tmpDir = join(tmpdir(), `chat-test-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
+    process.env.DATA_DIR = tmpDir;
     chatLogPath = join(tmpDir, 'chats.jsonl');
 
     app = express();
     app.use(express.json());
     bus = new EventBus();
-    registerChatRoutes(app, bus, { chatLogPath, provider: null });
+    registerChatRoutes({ app, bus, provider: null });
   });
 
   afterEach(() => {
+    delete process.env.DATA_DIR;
     rmSync(tmpDir, { recursive: true, force: true });
   });
 

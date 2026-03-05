@@ -1,18 +1,15 @@
 import axios from 'axios';
-import { loadAccounts, saveAccounts, toDTO } from '../accounts/accountStore.js';
+import { loadAccounts, removeById, toDTO } from '../accounts/accountStore.js';
 import { Logger } from '../core/Logger.js';
 
-export function registerAccountRoutes(app, config) {
+export function registerAccountRoutes({ app, config }) {
   app.get('/api/accounts', (req, res) => {
     res.json(loadAccounts().map(toDTO));
   });
 
   app.delete('/api/accounts/:id', async (req, res) => {
-    const accounts = loadAccounts();
-    const idx = accounts.findIndex(a => a.id === req.params.id);
-    if (idx === -1) return res.status(404).json({ error: 'Account not found' });
-
-    const account = accounts[idx];
+    const account = removeById(req.params.id);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
 
     try {
       await axios.post(
@@ -29,8 +26,6 @@ export function registerAccountRoutes(app, config) {
       Logger.warn(`Token revoke failed (may already be invalid): ${err.message}`);
     }
 
-    accounts.splice(idx, 1);
-    saveAccounts(accounts);
     Logger.info(`Disconnected account: @${account.username || account.open_id}`);
     res.json({ success: true });
   });

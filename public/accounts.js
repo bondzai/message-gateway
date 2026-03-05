@@ -1,3 +1,10 @@
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 async function loadAccounts() {
   try {
     const res = await fetch('/api/accounts');
@@ -21,25 +28,33 @@ function renderAccounts(accounts) {
     return;
   }
 
-  list.innerHTML = accounts.map(acc => `
-    <div class="account-card" data-id="${acc.id}">
-      <div class="account-avatar">
-        ${acc.avatar_url
-          ? `<img src="${acc.avatar_url}" alt="">`
-          : '@'}
-      </div>
+  list.innerHTML = accounts.map(acc => {
+    const name = escapeHtml(acc.username || acc.display_name || acc.open_id);
+    const openId = escapeHtml(acc.open_id);
+    const avatarImg = acc.avatar_url
+      ? `<img src="${escapeHtml(acc.avatar_url)}" alt="">`
+      : '@';
+    const statusClass = escapeHtml(acc.status);
+    const statusLabel = acc.status === 'active' ? '● Connected' : '○ ' + escapeHtml(acc.status);
+    const tokenExpiry = acc.token_expires_at
+      ? ' — Token expires: ' + new Date(acc.token_expires_at).toLocaleString()
+      : '';
+    const safeId = escapeHtml(acc.id);
+
+    return `
+    <div class="account-card" data-id="${safeId}">
+      <div class="account-avatar">${avatarImg}</div>
       <div class="account-info">
-        <div class="account-name">@${acc.username || acc.display_name || acc.open_id}</div>
-        <div class="account-id">ID: ${acc.open_id}</div>
-        <div class="account-status ${acc.status}">
-          ${acc.status === 'active' ? '● Connected' : '○ ' + acc.status}
-          ${acc.token_expires_at ? ' — Token expires: ' + new Date(acc.token_expires_at).toLocaleString() : ''}
+        <div class="account-name">@${name}</div>
+        <div class="account-id">ID: ${openId}</div>
+        <div class="account-status ${statusClass}">
+          ${statusLabel}${tokenExpiry}
         </div>
       </div>
-      <a class="btn btn-chat" href="/?account=${acc.id}">Open Chats</a>
-      <button class="btn btn-disconnect" onclick="disconnectAccount('${acc.id}')">Disconnect</button>
-    </div>
-  `).join('');
+      <a class="btn btn-chat" href="/?account=${encodeURIComponent(acc.id)}">Open Chats</a>
+      <button class="btn btn-disconnect" onclick="disconnectAccount('${safeId}')">Disconnect</button>
+    </div>`;
+  }).join('');
 }
 
 function connectAccount() {
@@ -50,7 +65,7 @@ async function disconnectAccount(id) {
   if (!confirm('Disconnect this TikTok account? You can reconnect later.')) return;
 
   try {
-    const res = await fetch(`/api/accounts/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/accounts/${encodeURIComponent(id)}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
       showToast('Account disconnected');

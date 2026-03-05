@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { BaseProvider } from './BaseProvider.js';
 import { Logger } from '../core/Logger.js';
+import { EVENTS, DIRECTION, UNKNOWN, SELF_USER, MAX_SEEN_IDS } from '../core/constants.js';
+import { normalizeMessage } from '../core/normalize.js';
 
 const API_BASE = 'https://api.respond.io/v2';
 const POLL_INTERVAL = 1000;
@@ -36,12 +38,12 @@ export class RespondIOProvider extends BaseProvider {
     const contact = data.contact || {};
     const message = data.message || data.content || {};
 
-    this.eventBus.emit('dm:incoming', {
-      conversationId: String(contact.id || data.conversationId || 'unknown'),
+    this.eventBus.emit(EVENTS.DM_INCOMING, {
+      conversationId: String(contact.id || data.conversationId || UNKNOWN),
       user: {
-        id: String(contact.id || 'unknown'),
-        username: contact.firstName || 'unknown',
-        nickname: [contact.firstName, contact.lastName].filter(Boolean).join(' ') || 'unknown',
+        id: String(contact.id || UNKNOWN),
+        username: contact.firstName || UNKNOWN,
+        nickname: [contact.firstName, contact.lastName].filter(Boolean).join(' ') || UNKNOWN,
         avatar: contact.profilePic || '',
       },
       message: {
@@ -89,6 +91,12 @@ export class RespondIOProvider extends BaseProvider {
     }
   }
 
+  _pruneSeenIds() {
+    if (this.seenMessageIds.size <= MAX_SEEN_IDS) return;
+    const ids = [...this.seenMessageIds];
+    this.seenMessageIds = new Set(ids.slice(ids.length - MAX_SEEN_IDS / 2));
+  }
+
   async _poll() {
     try {
       const res = await axios.post(
@@ -101,15 +109,11 @@ export class RespondIOProvider extends BaseProvider {
       this._lastErrorStatus = null;
 
       for (const contact of contacts) {
-        const id = String(contact.id);
-
-        if (!this.knownContacts.has(id)) {
-          this.knownContacts.set(id, contact);
-        }
-
-        await this._fetchMessages(contact);
+        this.knownContacts.set(String(contact.id), contact);
       }
 
+      await Promise.allSettled(contacts.map(c => this._fetchMessages(c)));
+      this._pruneSeenIds();
       this._firstPoll = false;
     } catch (err) {
       if (err.response?.status !== this._lastErrorStatus) {
@@ -121,6 +125,16 @@ export class RespondIOProvider extends BaseProvider {
         this.stopPolling();
       }
     }
+  }
+
+  _buildUser(contact) {
+    const id = String(contact.id);
+    return {
+      id,
+      username: contact.firstName || id,
+      nickname: [contact.firstName, contact.lastName].filter(Boolean).join(' ') || id,
+      avatar: contact.profilePic || '',
+    };
   }
 
   async _fetchMessages(contact) {
@@ -135,35 +149,28 @@ export class RespondIOProvider extends BaseProvider {
 
       for (const msg of messages) {
         const msgId = String(msg.messageId);
-
         if (this.seenMessageIds.has(msgId)) continue;
         this.seenMessageIds.add(msgId);
 
-        const direction = msg.traffic === 'outgoing' ? 'outgoing' : 'incoming';
+        const direction = msg.traffic === 'outgoing' ? DIRECTION.OUTGOING : DIRECTION.INCOMING;
         const text = msg.message?.text || msg.message?.content || '';
-
         if (!text) continue;
 
-        this.eventBus.emit(direction === 'incoming' ? 'dm:incoming' : 'message', {
-          type: 'dm',
-          direction,
+        const user = direction === DIRECTION.INCOMING ? this._buildUser(contact) : SELF_USER;
+        const timestamp = msg.messageId
+          ? new Date(Math.floor(msg.messageId / 1000)).toISOString()
+          : new Date().toISOString();
+
+        const event = direction === DIRECTION.INCOMING ? EVENTS.DM_INCOMING : EVENTS.MESSAGE;
+        this.eventBus.emit(event, normalizeMessage({
           conversationId: String(id),
-          user: direction === 'incoming'
-            ? {
-                id: String(id),
-                username: contact.firstName || String(id),
-                nickname: [contact.firstName, contact.lastName].filter(Boolean).join(' ') || String(id),
-                avatar: contact.profilePic || '',
-              }
-            : { id: 'self', username: 'You', nickname: 'You', avatar: '' },
+          user,
           message: { type: msg.message?.type || 'text', content: text },
-          timestamp: msg.messageId
-            ? new Date(Math.floor(msg.messageId / 1000)).toISOString()
-            : new Date().toISOString(),
-        });
+          timestamp,
+        }, direction));
       }
-    } catch {
-      // Silently skip — will retry next poll
+    } catch (err) {
+      Logger.warn(`Fetch messages for contact ${contact.id}: ${err.message}`);
     }
   }
 }

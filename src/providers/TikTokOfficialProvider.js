@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { BaseProvider } from './BaseProvider.js';
 import { Logger } from '../core/Logger.js';
+import { EVENTS, UNKNOWN } from '../core/constants.js';
 
 const MESSAGING_API_BASE = 'https://open.tiktokapis.com/v2/im/message/send/';
 
@@ -31,12 +32,12 @@ export class TikTokOfficialProvider extends BaseProvider {
     }
 
     if (body.event === 'message') {
-      const payload = {
-        conversationId: body.conversation_id || body.user?.id || 'unknown',
+      this.eventBus.emit(EVENTS.DM_INCOMING, {
+        conversationId: body.conversation_id || body.user?.id || UNKNOWN,
         user: {
-          id: body.user?.id || 'unknown',
-          username: body.user?.username || 'unknown',
-          nickname: body.user?.nickname || body.user?.username || 'unknown',
+          id: body.user?.id || UNKNOWN,
+          username: body.user?.username || UNKNOWN,
+          nickname: body.user?.nickname || body.user?.username || UNKNOWN,
           avatar: body.user?.avatar || '',
         },
         message: {
@@ -44,9 +45,7 @@ export class TikTokOfficialProvider extends BaseProvider {
           content: body.message?.content || '',
         },
         timestamp: body.timestamp || new Date().toISOString(),
-      };
-
-      this.eventBus.emit('dm:incoming', payload);
+      });
     }
 
     res.status(200).json({ success: true });

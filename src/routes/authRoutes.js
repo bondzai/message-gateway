@@ -1,8 +1,7 @@
 import { randomBytes } from 'crypto';
 import axios from 'axios';
-import { generateCodeVerifier, generateCodeChallenge } from '../auth/pkce.js';
 import * as pendingOAuth from '../auth/pendingOAuth.js';
-import { loadAccounts, saveAccounts } from '../accounts/accountStore.js';
+import { upsert } from '../accounts/accountStore.js';
 import { Logger } from '../core/Logger.js';
 
 function buildRedirectUri(req) {
@@ -11,14 +10,13 @@ function buildRedirectUri(req) {
   return `${proto}://${host}/auth/callback`;
 }
 
-export function registerAuthRoutes(app, config) {
+export function registerAuthRoutes({ app, config }) {
   app.get('/auth/connect', (req, res) => {
     if (!config.tiktok.clientKey) {
       return res.status(400).send('TIKTOK_CLIENT_KEY not configured in .env');
     }
 
     const state = randomBytes(16).toString('hex');
-
     pendingOAuth.set(state, {});
 
     const redirectUri = buildRedirectUri(req);
@@ -79,7 +77,7 @@ export function registerAuthRoutes(app, config) {
         Logger.warn(`Could not fetch user profile: ${err.message}`);
       }
 
-      const account = {
+      upsert({
         id: profile.open_id,
         open_id: profile.open_id,
         username: profile.username,
@@ -90,18 +88,8 @@ export function registerAuthRoutes(app, config) {
         token_expires_at: new Date(Date.now() + (tokens.expires_in || 86400) * 1000).toISOString(),
         status: 'active',
         connected_at: new Date().toISOString(),
-      };
+      });
 
-      const accounts = loadAccounts();
-      const existingIdx = accounts.findIndex(a => a.open_id === profile.open_id);
-
-      if (existingIdx >= 0) {
-        accounts[existingIdx] = account;
-      } else {
-        accounts.push(account);
-      }
-
-      saveAccounts(accounts);
       Logger.info(`Account connected: @${profile.username || profile.open_id}`);
       res.redirect('/accounts.html?connected=1');
     } catch (err) {
