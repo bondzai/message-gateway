@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'fs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { loadAccounts, saveAccounts, toDTO, upsert, removeById } from '../../src/accounts/accountStore.js';
@@ -8,11 +8,12 @@ let tempDir;
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'accountStore-test-'));
-  vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
+  process.env.DATA_DIR = join(tempDir, 'data');
+  mkdirSync(process.env.DATA_DIR, { recursive: true });
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  delete process.env.DATA_DIR;
   rmSync(tempDir, { recursive: true, force: true });
 });
 

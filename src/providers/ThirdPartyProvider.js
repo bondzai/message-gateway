@@ -2,6 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { BaseProvider } from './BaseProvider.js';
 import { Logger } from '../core/Logger.js';
+import { EVENTS, UNKNOWN } from '../core/constants.js';
 
 export class ThirdPartyProvider extends BaseProvider {
   constructor(eventBus, config) {
@@ -12,7 +13,6 @@ export class ThirdPartyProvider extends BaseProvider {
   }
 
   verifyWebhook(req, res) {
-    // Respond.io doesn't use GET verification — just return OK
     res.status(200).send('ok');
   }
 
@@ -23,7 +23,6 @@ export class ThirdPartyProvider extends BaseProvider {
       return res.status(400).json({ error: 'Invalid payload' });
     }
 
-    // Optional: verify HMAC signature from Respond.io
     const signature = req.headers['x-respond-signature'];
     if (signature && this.webhookSecret) {
       const hmac = crypto.createHmac('sha256', this.webhookSecret);
@@ -34,20 +33,18 @@ export class ThirdPartyProvider extends BaseProvider {
       }
     }
 
-    // Respond.io "message.created" event payload:
-    // { event: "message.created", data: { content: {...}, contact: {...}, ... } }
     if (body.event === 'message.created' || body.data?.message || body.data?.content) {
       const data = body.data || body;
       const contact = data.contact || {};
       const message = data.message || data.content || {};
 
-      const payload = {
-        conversationId: data.conversationId || contact.id || String(contact._id) || 'unknown',
+      this.eventBus.emit(EVENTS.DM_INCOMING, {
+        conversationId: data.conversationId || contact.id || String(contact._id) || UNKNOWN,
         user: {
-          id: contact.id || String(contact._id) || 'unknown',
-          username: contact.phone || contact.email || contact.name || 'unknown',
+          id: contact.id || String(contact._id) || UNKNOWN,
+          username: contact.phone || contact.email || contact.name || UNKNOWN,
           nickname: [contact.firstName, contact.lastName].filter(Boolean).join(' ')
-            || contact.name || 'unknown',
+            || contact.name || UNKNOWN,
           avatar: contact.profilePic || '',
         },
         message: {
@@ -57,12 +54,9 @@ export class ThirdPartyProvider extends BaseProvider {
         timestamp: data.timestamp
           ? new Date(data.timestamp).toISOString()
           : new Date().toISOString(),
-      };
-
-      this.eventBus.emit('dm:incoming', payload);
+      });
     }
 
-    // Must respond 200 within 5 seconds or Respond.io counts an error
     res.status(200).json({ success: true });
   }
 
@@ -73,7 +67,6 @@ export class ThirdPartyProvider extends BaseProvider {
     }
 
     try {
-      // Respond.io API v2: POST /contact/{contactId}/message
       const response = await axios.post(
         `${this.apiUrl}/contact/${contactId}/message`,
         {

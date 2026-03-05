@@ -4,10 +4,13 @@ import { Server } from 'socket.io';
 import config from './src/config.js';
 import { EventBus } from './src/core/EventBus.js';
 import { Logger } from './src/core/Logger.js';
+import { EVENTS, DIRECTION, SELF_USER } from './src/core/constants.js';
+import { normalizeMessage } from './src/core/normalize.js';
 import { MessageHandler } from './src/handlers/MessageHandler.js';
 import { SocketIOTransport } from './src/transport/SocketIOTransport.js';
 import { createProvider } from './src/providers/providerFactory.js';
-import { ensureDataDir, getChatLogPath } from './src/accounts/accountStore.js';
+import { ensureDataDir } from './src/accounts/accountStore.js';
+import { apiAuth } from './src/middleware/auth.js';
 import { registerHealthRoutes } from './src/routes/healthRoutes.js';
 import { registerChatRoutes } from './src/routes/chatRoutes.js';
 import { registerAccountRoutes } from './src/routes/accountRoutes.js';
@@ -16,7 +19,6 @@ import { registerWebhookRoutes } from './src/routes/webhookRoutes.js';
 
 ensureDataDir();
 
-const chatLogPath = getChatLogPath();
 const app = express();
 const server = createServer(app);
 const io = new Server(server, {
@@ -27,6 +29,7 @@ const io = new Server(server, {
 app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.static('public', { maxAge: 0 }));
+app.use('/api', apiAuth(config.apiSecret));
 
 const bus = new EventBus();
 const provider = createProvider(bus, config);
@@ -34,24 +37,22 @@ const provider = createProvider(bus, config);
 new MessageHandler(bus).register();
 new SocketIOTransport(io, bus).register();
 
-registerHealthRoutes(app, { provider, config, chatLogPath });
-registerChatRoutes(app, bus, { chatLogPath, provider });
-registerAccountRoutes(app, config);
-registerAuthRoutes(app, config);
-registerWebhookRoutes(app, provider);
+const deps = { app, bus, provider, config };
+registerHealthRoutes(deps);
+registerChatRoutes(deps);
+registerAccountRoutes(deps);
+registerAuthRoutes(deps);
+registerWebhookRoutes(deps);
 
-bus.on('dm:outgoing', async ({ conversationId, text, accountId }) => {
+bus.on(EVENTS.DM_OUTGOING, async ({ conversationId, text, accountId }) => {
   const result = await provider.sendMessage(conversationId, text);
   if (result.success) {
-    bus.emit('message', {
-      type: 'dm',
-      direction: 'outgoing',
-      accountId: accountId || '',
+    bus.emit(EVENTS.MESSAGE, normalizeMessage({
+      accountId,
       conversationId,
-      timestamp: new Date().toISOString(),
-      user: { id: 'self', username: 'You', nickname: 'You', avatar: '' },
+      user: SELF_USER,
       message: { type: 'text', content: text },
-    });
+    }, DIRECTION.OUTGOING));
   } else {
     Logger.error(`Failed to send to ${conversationId}: ${result.error}`);
   }

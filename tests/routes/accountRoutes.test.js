@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { registerAccountRoutes } from '../../src/routes/accountRoutes.js';
@@ -11,20 +11,21 @@ let tempDir;
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'accountRoutes-test-'));
-  vi.spyOn(process, 'cwd').mockReturnValue(tempDir);
+  process.env.DATA_DIR = join(tempDir, 'data');
+  mkdirSync(process.env.DATA_DIR, { recursive: true });
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  delete process.env.DATA_DIR;
   rmSync(tempDir, { recursive: true, force: true });
 });
 
 function createApp() {
   const app = express();
   app.use(express.json());
-  registerAccountRoutes(app, {
+  registerAccountRoutes({ app, config: {
     tiktok: { clientKey: 'test', clientSecret: 'test' },
-  });
+  }});
   return app;
 }
 

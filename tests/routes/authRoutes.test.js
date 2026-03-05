@@ -6,7 +6,7 @@ import { registerAuthRoutes } from '../../src/routes/authRoutes.js';
 function createApp(config) {
   const app = express();
   app.use(express.json());
-  registerAuthRoutes(app, config);
+  registerAuthRoutes({ app, config });
   return app;
 }
 

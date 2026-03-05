@@ -1,7 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 
-function dataDir() { return join(process.cwd(), 'data'); }
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = join(__dirname, '..', '..');
+
+function dataDir() {
+  return process.env.DATA_DIR || join(PROJECT_ROOT, 'data');
+}
+
 function accountsFile() { return join(dataDir(), 'accounts.json'); }
 
 export function ensureDataDir() {
